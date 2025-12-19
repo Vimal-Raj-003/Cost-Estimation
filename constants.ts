@@ -1,4 +1,5 @@
-import { Machine, Material, RunnerType, Template, ShapeType } from './types';
+
+import { Machine, Material, RunnerType, Template, ShapeType, UserInputs, WeightSource } from './types';
 
 export const MATERIALS: Material[] = [
   { code: 'PP_HOMO', name: 'Polypropylene Homopolymer', family: 'PP', density: 0.90, cf_min: 0.28, cf_max: 0.28, k_cool_min: 2.1, k_cool_max: 2.1, k_pack_min: 0.25, k_pack_max: 0.25, t_fill_min: 0.9, t_fill_max: 0.9, regrind: 30, priceResin: 105, priceUSD: 1.30, priceScrap: 15, remarks: 'General purpose, automotive interiors' },
@@ -15,6 +16,7 @@ export const MATERIALS: Material[] = [
   { code: 'PBT', name: 'Polybutylene Terephthalate', family: 'PBT', density: 1.31, cf_min: 0.45, cf_max: 0.45, k_cool_min: 3.0, k_cool_max: 3.0, k_pack_min: 0.40, k_pack_max: 0.40, t_fill_min: 1.3, t_fill_max: 1.3, regrind: 20, priceResin: 270, priceUSD: 3.30, priceScrap: 30, remarks: 'Electrical connectors' },
   { code: 'ABS_GF30', name: 'ABS Glass Filled 30%', family: 'ABS_GF', density: 1.20, cf_min: 0.55, cf_max: 0.55, k_cool_min: 3.2, k_cool_max: 3.2, k_pack_min: 0.45, k_pack_max: 0.45, t_fill_min: 1.6, t_fill_max: 1.6, regrind: 5, priceResin: 230, priceUSD: 2.80, priceScrap: 20, remarks: 'Structural housings' },
   { code: 'PA66_GF30', name: 'Nylon 66 Glass Filled 30%', family: 'PA_GF', density: 1.36, cf_min: 0.65, cf_max: 0.65, k_cool_min: 3.8, k_cool_max: 3.8, k_pack_min: 0.55, k_pack_max: 0.55, t_fill_min: 1.8, t_fill_max: 1.8, regrind: 5, priceResin: 360, priceUSD: 4.40, priceScrap: 30, remarks: 'Automotive structural parts' },
+  // Fixed duplicate t_fill_min property and added missing t_fill_max to resolve validation errors
   { code: 'PC_GF20', name: 'Polycarbonate Glass Filled 20%', family: 'PC_GF', density: 1.32, cf_min: 0.65, cf_max: 0.65, k_cool_min: 4.2, k_cool_max: 4.2, k_pack_min: 0.55, k_pack_max: 0.55, t_fill_min: 1.9, t_fill_max: 1.9, regrind: 5, priceResin: 390, priceUSD: 4.80, priceScrap: 35, remarks: 'High stiffness parts' },
   { code: 'PBT_GF30', name: 'PBT Glass Filled 30%', family: 'PBT_GF', density: 1.55, cf_min: 0.60, cf_max: 0.60, k_cool_min: 3.6, k_cool_max: 3.6, k_pack_min: 0.50, k_pack_max: 0.50, t_fill_min: 1.7, t_fill_max: 1.7, regrind: 5, priceResin: 350, priceUSD: 4.30, priceScrap: 30, remarks: 'Electrical & EV components' },
 ];
@@ -74,9 +76,12 @@ export const SHAPE_FACTORS = {
   COMPLEX: 0.65,
 };
 
-const BASE_INPUTS = {
+// Typed BASE_INPUTS as UserInputs to ensure literal values like 'calculated' are preserved as WeightSource type
+const BASE_INPUTS: UserInputs = {
   length: 100, width: 50, height: 20, wallThickness: 2, projectedArea: null,
-  shapeType: ShapeType.RECTANGLE, volume: null, weight: null, annualVolume: 100000,
+  shapeType: ShapeType.RECTANGLE, volume: null, weight: null, 
+  weightSource: 'calculated',
+  annualVolume: 100000,
   workingDays: 250, shiftsPerDay: 2, hoursPerShift: 8, oee: 0.85, scrapRate: 0.02,
   materialCode: 'PP_HOMO', isGlassFilled: false, runnerType: RunnerType.COLD_2_PLATE,
   numOperators: 1, operatorRate: 150, laborOverhead: 0.3, useRobot: false, useConveyor: false,

@@ -1,4 +1,14 @@
+
 export type ProjectStatus = 'Draft' | 'Final' | 'Sold' | 'Archived';
+export type WeightSource = 'calculated' | 'manual';
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  picture?: string;
+  role: 'admin' | 'user';
+}
 
 export interface ProjectMetadata {
   projectId: string;
@@ -73,15 +83,16 @@ export interface PurchasedItem {
 }
 
 export interface UserInputs {
-  length: number;
-  width: number;
-  height: number;
-  wallThickness: number;
+  length: number | null;
+  width: number | null;
+  height: number | null;
+  wallThickness: number | null;
   projectedArea: number | null;
   shapeType: ShapeType;
   volume: number | null;
   weight: number | null;
-  annualVolume: number;
+  weightSource: WeightSource;
+  annualVolume: number | null;
   workingDays: number;
   shiftsPerDay: number;
   hoursPerShift: number;
@@ -95,7 +106,7 @@ export interface UserInputs {
   laborOverhead: number;
   useRobot: boolean;
   useConveyor: boolean;
-  resinPriceOverride: number;
+  resinPriceOverride: number | null;
   packagingCostPerPart: number;
   sgaRate: number;
   profitRate: number;

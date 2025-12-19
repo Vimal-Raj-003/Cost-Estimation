@@ -1,5 +1,6 @@
+
 import React from 'react';
-import { HelpCircle } from 'lucide-react';
+import { HelpCircle, Calculator, User } from 'lucide-react';
 
 interface InputGroupProps {
   title: string;
@@ -7,13 +8,14 @@ interface InputGroupProps {
 }
 
 export const InputGroup: React.FC<InputGroupProps> = ({ title, children }) => (
-  <div className="bg-brand-cardLight dark:bg-brand-cardDark rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-5 mb-6 transition-colors duration-200">
-    <div className="flex items-center justify-between mb-5 border-b border-slate-100 dark:border-slate-700 pb-3">
-      <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+  <div className="bg-brand-cardLight dark:bg-brand-cardDark rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 mb-6 transition-all duration-300 hover:shadow-md">
+    <div className="flex items-center justify-between mb-6 border-b border-slate-50 dark:border-slate-800 pb-3">
+      <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center">
+        <div className="w-1.5 h-1.5 bg-brand-primary rounded-full mr-2"></div>
         {title}
       </h3>
     </div>
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {children}
     </div>
   </div>
@@ -22,11 +24,13 @@ export const InputGroup: React.FC<InputGroupProps> = ({ title, children }) => (
 interface InputFieldProps {
   label: string;
   value: string | number;
-  onChange: (val: any) => void;
+  onChange?: (val: any) => void;
   type?: 'text' | 'number' | 'select' | 'checkbox';
   options?: { label: string; value: string | number }[];
   suffix?: string;
   step?: string;
+  isCalculated?: boolean;
+  highlight?: boolean;
 }
 
 export const InputField: React.FC<InputFieldProps> = ({ 
@@ -36,23 +40,42 @@ export const InputField: React.FC<InputFieldProps> = ({
   type = 'text', 
   options, 
   suffix,
-  step = "0.01"
+  step = "0.01",
+  isCalculated = false,
+  highlight = false
 }) => {
+  const baseClasses = "w-full border text-sm rounded-xl block p-3 transition-all outline-none appearance-none";
+  
+  // Input vs Calculated Color logic
+  const stateClasses = isCalculated 
+    ? (highlight 
+        ? "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-brand-primary dark:text-blue-300 font-bold cursor-default" 
+        : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white cursor-default")
+    : "bg-[#EEF2FF] dark:bg-[#1D2A44] border-blue-200/50 dark:border-blue-900/30 text-brand-primary dark:text-blue-100 font-medium focus:ring-2 focus:ring-blue-400/20 focus:border-blue-400/50";
+
   return (
-    <div className="flex flex-col group">
-      <div className="flex justify-between items-center mb-1.5">
-        <label className="text-xs font-semibold text-slate-600 dark:text-slate-300 group-focus-within:text-brand-primary dark:group-focus-within:text-brand-material transition-colors">
+    <div className="flex flex-col group animate-fade-in">
+      <div className="flex justify-between items-center mb-1.5 px-1">
+        <label className={`text-[10px] font-bold uppercase tracking-widest ${isCalculated ? 'text-slate-400' : 'text-brand-primary dark:text-blue-400'}`}>
           {label}
         </label>
+        <div className={`flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-tighter ${isCalculated ? 'bg-slate-100 dark:bg-slate-800 text-slate-500' : 'bg-blue-100 dark:bg-blue-900/40 text-brand-primary dark:text-blue-300'}`}>
+          {isCalculated ? (
+            <><Calculator className="w-2 h-2 mr-1" /> Calc</>
+          ) : (
+            <><User className="w-2 h-2 mr-1" /> Input</>
+          )}
+        </div>
       </div>
       
       <div className="relative">
         {type === 'select' ? (
           <div className="relative">
              <select
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-2 focus:ring-brand-primary focus:border-transparent block w-full p-2.5 transition-all outline-none appearance-none"
+              className={`${baseClasses} ${stateClasses}`}
               value={value}
-              onChange={(e) => onChange(e.target.value)}
+              onChange={(e) => onChange?.(e.target.value)}
+              disabled={isCalculated}
             >
               {options?.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -60,34 +83,34 @@ export const InputField: React.FC<InputFieldProps> = ({
                 </option>
               ))}
             </select>
-            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
-              <svg className="h-4 w-4 fill-current" viewBox="0 0 20 20">
-                <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
-              </svg>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
+              <ChevronDownIcon />
             </div>
           </div>
         ) : type === 'checkbox' ? (
-          <label className="flex items-center p-3 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+          <label className={`flex items-center p-3 border rounded-xl cursor-pointer transition-all ${stateClasses}`}>
             <input
                type="checkbox"
                checked={Boolean(value)}
-               onChange={(e) => onChange(e.target.checked)}
-               className="w-4 h-4 text-brand-primary bg-white border-slate-300 rounded focus:ring-brand-primary dark:focus:ring-brand-primary dark:ring-offset-slate-800 focus:ring-2 dark:bg-slate-700 dark:border-slate-600"
+               onChange={(e) => onChange?.(e.target.checked)}
+               disabled={isCalculated}
+               className="w-4 h-4 text-brand-primary bg-white border-slate-300 rounded focus:ring-brand-primary focus:ring-2"
             />
-            <span className="ml-2 text-sm font-medium text-slate-700 dark:text-slate-200">{Boolean(value) ? 'Yes, Include' : 'No'}</span>
+            <span className="ml-3 text-sm font-semibold">{Boolean(value) ? 'Yes' : 'No'}</span>
           </label>
         ) : (
           <div className="relative flex items-center">
             <input
               type={type}
               step={step}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-sm rounded-lg focus:ring-2 focus:ring-brand-primary focus:border-transparent block p-2.5 transition-all outline-none placeholder-slate-400"
+              readOnly={isCalculated}
+              className={`${baseClasses} ${stateClasses}`}
               value={value}
-              onChange={(e) => onChange(e.target.value)}
+              onChange={(e) => onChange?.(e.target.value)}
             />
             {suffix && (
-              <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                <span className="text-xs font-medium text-slate-400 dark:text-slate-500">
+              <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none">
+                <span className={`text-[10px] font-bold ${isCalculated ? 'text-slate-400' : 'text-brand-primary/60 dark:text-blue-400/60'}`}>
                   {suffix}
                 </span>
               </div>
@@ -98,3 +121,9 @@ export const InputField: React.FC<InputFieldProps> = ({
     </div>
   );
 };
+
+const ChevronDownIcon = () => (
+  <svg className="h-4 w-4 fill-current" viewBox="0 0 20 20">
+    <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+  </svg>
+);

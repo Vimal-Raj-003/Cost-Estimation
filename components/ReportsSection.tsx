@@ -1,3 +1,4 @@
+
 import React, { useMemo } from 'react';
 import { CalculationResult, ProjectMetadata, UserInputs } from '../types';
 import { 
@@ -7,7 +8,7 @@ import {
 import { 
   FileText, Download, TrendingUp, AlertCircle, Info, Layers, 
   Zap, Users, ShoppingBag, DollarSign, Activity, Package, Clock, ShieldAlert, 
-  ChevronRight, ArrowRight, Printer
+  ChevronRight, ArrowRight, Printer, Copy, Check, Filter
 } from 'lucide-react';
 import { calculateCosts } from '../utils/calculations';
 
@@ -26,7 +27,7 @@ const COLORS = {
   overhead: '#AF7AC5', // Purple
   purchased: '#E59866',// Orange
   profit: '#58D68D',   // Green
-  textMuted: '#94a3b8',
+  textMuted: '#94a3b8'
 };
 
 const formatCurrency = (val: number) => 
@@ -39,19 +40,7 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
   metadata, inputs, result, onExportPDF, onExportExcel 
 }) => {
   
-  // 1. Scenario Analysis Data
-  const scenarios = useMemo(() => {
-    const lowVolInputs = { ...inputs, annualVolume: inputs.annualVolume * 0.5 };
-    const highVolInputs = { ...inputs, annualVolume: inputs.annualVolume * 2 };
-    
-    return {
-      current: result.totalPartCost,
-      low: calculateCosts(lowVolInputs).totalPartCost,
-      high: calculateCosts(highVolInputs).totalPartCost
-    };
-  }, [inputs, result]);
-
-  // 2. Cost vs Volume Trend Data
+  // 1. Cost vs Volume Trend Data
   const trendData = useMemo(() => {
     const volumes = [10000, 25000, 50000, 100000, 250000, 500000, 1000000];
     return volumes.map(v => {
@@ -64,17 +53,16 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
     });
   }, [inputs]);
 
-  // 3. Waterfall Data Construction
+  // 2. Waterfall Data (Cumulative Build-up)
   const waterfallData = [
-    { name: 'Base Mat.', val: result.resinCost },
-    { name: 'Net Mat.', val: result.materialCostPerPart },
-    { name: 'Molding', val: result.materialCostPerPart + result.processCostPerPart },
-    { name: 'Packaged', val: result.materialCostPerPart + result.processCostPerPart + result.packagingCost },
-    { name: 'Total MFG', val: result.totalPartCost - result.profitCost },
-    { name: 'Final', val: result.totalPartCost },
+    { name: 'Material', val: result.materialCostPerPart },
+    { name: 'Process', val: result.processCostPerPart },
+    { name: 'Pack/OH', val: result.packagingCost + result.sgaCost },
+    { name: 'Items', val: result.purchasedItemsCost },
+    { name: 'Margin', val: result.profitCost },
   ];
 
-  // 4. Distribution Chart Data
+  // 3. Distribution Data
   const distributionData = [
     { name: 'Material', value: result.materialCostPerPart, color: COLORS.material },
     { name: 'Process', value: result.processCostPerPart, color: COLORS.process },
@@ -83,248 +71,228 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
     { name: 'Margin', value: result.profitCost, color: COLORS.profit },
   ].filter(d => d.value > 0);
 
-  // 5. Process Detail Data
+  // 4. Process breakdown
   const processData = [
     { name: 'Machine', value: result.machineCostPerPart, fill: COLORS.process },
     { name: 'Labor', value: result.laborCostPerPart, fill: COLORS.labor },
     { name: 'Auxiliary', value: result.auxCostPerPart, fill: COLORS.overhead },
   ];
 
-  return (
-    <div id="report-view-root" className="max-w-6xl mx-auto space-y-10 py-4 animate-fade-in pb-20">
-      
-      {/* SECTION 1: EXECUTIVE HEADER */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between border-b border-slate-200 dark:border-slate-800 pb-8 gap-6">
-        <div>
-          <div className="flex items-center space-x-2 mb-3">
-             <span className="px-2 py-0.5 bg-brand-primary text-white text-[10px] font-bold rounded uppercase tracking-widest">Executive Summary</span>
-             <span className="text-slate-300 dark:text-slate-700">/</span>
-             <span className="text-xs font-mono text-slate-400">{metadata.projectId}</span>
-          </div>
-          <h1 className="text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">{metadata.projectName}</h1>
-          <p className="text-slate-500 mt-2 flex items-center">
-            Prepared for <span className="font-bold text-slate-700 dark:text-slate-300 ml-1 mr-2">{metadata.customerName}</span> 
-            • Version {metadata.version} • {metadata.createdDate}
-          </p>
-        </div>
-        <div className="flex items-center space-x-3">
-           <button onClick={onExportPDF} className="flex items-center px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-sm font-bold shadow-sm hover:bg-slate-50 transition-all">
-             <Printer className="w-4 h-4 mr-2" /> Print PDF
-           </button>
-           <button onClick={onExportExcel} className="flex items-center px-4 py-2.5 bg-brand-primary text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-900/20 hover:scale-[1.02] transition-all">
-             <Download className="w-4 h-4 mr-2" /> Detailed XLS
-           </button>
-        </div>
-      </div>
+  const CopyButton = ({ text }: { text: string }) => {
+    const [copied, setCopied] = React.useState(false);
+    const handleCopy = () => {
+      navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    };
+    return (
+      <button onClick={handleCopy} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors ml-2">
+        {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3 text-slate-400" />}
+      </button>
+    );
+  };
 
-      {/* SECTION 2: KEY PERFORMANCE INDICATORS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden group">
-           <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform"><DollarSign className="w-12 h-12" /></div>
-           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Unit Cost (INR)</p>
-           <h3 className="text-3xl font-black text-slate-800 dark:text-white">{formatCurrency(result.totalPartCost)}</h3>
-           <div className="mt-4 flex items-center text-xs">
-             <span className="text-green-500 font-bold flex items-center">Optimized <Activity className="w-3 h-3 ml-1" /></span>
+  const TableRow = ({ label, value, unit = '', highlight = false }: any) => (
+    <tr className="border-b border-slate-50 dark:border-slate-800/50 last:border-0 group">
+      <td className="py-3 text-slate-500 dark:text-slate-400 text-xs font-medium">{label}</td>
+      <td className={`py-3 text-right text-xs font-bold font-mono ${highlight ? 'text-brand-primary dark:text-blue-400' : 'text-slate-700 dark:text-slate-200'}`}>
+        {value} <span className="text-[10px] text-slate-400 font-normal ml-0.5">{unit}</span>
+        <CopyButton text={value.toString()} />
+      </td>
+    </tr>
+  );
+
+  return (
+    <div id="report-view-root" className="max-w-6xl mx-auto space-y-12 animate-fade-in py-8 pb-32">
+      
+      {/* SECTION 1: PROJECT OVERVIEW HEADER */}
+      <div className="bg-brand-primary dark:bg-slate-900 rounded-[2rem] p-10 text-white shadow-2xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-20 -mt-20 blur-3xl"></div>
+        <div className="relative z-10 flex flex-col md:flex-row justify-between gap-8">
+           <div className="space-y-4">
+              <div className="flex items-center space-x-3">
+                 <div className="px-3 py-1 bg-white/10 backdrop-blur-md rounded-full text-[10px] font-black uppercase tracking-[0.2em]">Estimate Portfolio</div>
+                 <div className="w-1 h-1 bg-white/30 rounded-full"></div>
+                 <span className="text-white/60 font-mono text-xs">{metadata.projectId}</span>
+              </div>
+              <h1 className="text-5xl font-black tracking-tight">{metadata.projectName}</h1>
+              <div className="flex flex-wrap items-center gap-6 text-sm text-white/70">
+                 <div className="flex items-center"><Users className="w-4 h-4 mr-2 opacity-50" /> {metadata.customerName}</div>
+                 <div className="flex items-center"><FileText className="w-4 h-4 mr-2 opacity-50" /> v{metadata.version}</div>
+                 <div className="flex items-center"><Clock className="w-4 h-4 mr-2 opacity-50" /> {metadata.createdDate}</div>
+              </div>
+           </div>
+           <div className="flex items-center gap-3">
+              <button onClick={onExportPDF} className="flex items-center px-6 py-3 bg-white text-brand-primary rounded-2xl font-black text-sm hover:scale-[1.03] transition-all shadow-xl">
+                 <Printer className="w-4 h-4 mr-2" /> PDF Report
+              </button>
+              <button onClick={onExportExcel} className="flex items-center px-6 py-3 bg-white/10 backdrop-blur-md text-white rounded-2xl font-black text-sm hover:bg-white/20 transition-all border border-white/10">
+                 <Download className="w-4 h-4 mr-2" /> Engineering XLS
+              </button>
            </div>
         </div>
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden group">
-           <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform"><Package className="w-12 h-12" /></div>
-           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Annual Exposure</p>
-           <h3 className="text-3xl font-black text-slate-800 dark:text-white">{formatCurrency(result.totalPartCost * inputs.annualVolume)}</h3>
-           <p className="text-xs text-slate-400 mt-4">Based on {formatNumber(inputs.annualVolume, 0)} units</p>
-        </div>
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden group">
-           <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform"><TrendingUp className="w-12 h-12" /></div>
-           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Operating Margin</p>
-           <h3 className="text-3xl font-black text-green-600">{(result.profitRate * 100).toFixed(1)}%</h3>
-           <p className="text-xs text-slate-400 mt-4">{formatCurrency(result.profitCost)} profit/part</p>
-        </div>
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden group">
-           <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform"><Clock className="w-12 h-12" /></div>
-           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Cycle Efficiency</p>
-           <h3 className="text-3xl font-black text-slate-800 dark:text-white">{result.cycleTime.toFixed(1)}s</h3>
-           <p className="text-xs text-slate-400 mt-4">{result.actualPPH.toFixed(0)} parts per hour</p>
-        </div>
       </div>
 
-      {/* SECTION 3: VISUAL COST ANALYSIS */}
+      {/* SECTION 2: COST SUMMARY KPI CARDS */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {[
+          { label: 'Unit Cost', value: formatCurrency(result.totalPartCost), sub: 'Final Price', icon: DollarSign, color: 'text-brand-primary' },
+          { label: 'Annual Total', value: formatCurrency(result.totalPartCost * inputs.annualVolume), sub: `for ${formatNumber(inputs.annualVolume, 0)} units`, icon: Package, color: 'text-purple-500' },
+          // Fixed: Use inputs.profitRate instead of result.profitRate as profitRate is part of UserInputs, not CalculationResult
+          { label: 'Project Margin', value: `${(inputs.profitRate * 100).toFixed(1)}%`, sub: formatCurrency(result.profitCost), icon: TrendingUp, color: 'text-green-600' },
+          { label: 'Cycle Time', value: `${result.cycleTime.toFixed(1)}s`, sub: `${result.actualPPH.toFixed(0)} PPH`, icon: Activity, color: 'text-teal-600' }
+        ].map((kpi, idx) => (
+          <div key={idx} className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+             <div className="flex justify-between items-start mb-4">
+                <div className={`p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 ${kpi.color}`}>
+                   <kpi.icon className="w-6 h-6" />
+                </div>
+                <ChevronRight className="w-4 h-4 text-slate-300" />
+             </div>
+             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{kpi.label}</p>
+             <h3 className="text-3xl font-black text-slate-800 dark:text-white">{kpi.value}</h3>
+             <p className="text-xs text-slate-500 mt-2 font-medium">{kpi.sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* SECTION 3: ANALYTICAL VISUALS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* 3.1 Cost Distribution Donut */}
-        <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
-           <h4 className="text-sm font-bold text-slate-800 dark:text-white mb-8 flex items-center">
-             <Layers className="w-4 h-4 mr-2 text-brand-primary" /> Cost Contribution Breakdown
+        {/* Cost Donut */}
+        <div className="bg-white dark:bg-slate-900 p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden group">
+           <h4 className="text-sm font-bold text-slate-800 dark:text-white mb-10 flex items-center">
+             <div className="w-4 h-4 bg-brand-primary rounded-md mr-3 shadow-lg shadow-blue-500/20"></div>
+             Cost Contribution Breakdown
            </h4>
-           <div className="h-[300px] w-full">
+           <div className="h-[350px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                  <PieChart>
                     <Pie
                       data={distributionData}
                       cx="50%" cy="50%"
-                      innerRadius={80} outerRadius={110}
-                      paddingAngle={5}
+                      innerRadius={90} outerRadius={125}
+                      paddingAngle={8}
                       dataKey="value"
                       stroke="none"
-                      animationDuration={1500}
+                      animationDuration={1200}
+                      label={({ percent }) => `${(percent * 100).toFixed(1)}%`}
+                      labelLine={{ stroke: COLORS.textMuted, strokeWidth: 1 }}
                     >
                       {distributionData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
                     <RechartsTooltip 
-                      contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff' }}
-                      itemStyle={{ color: '#fff' }}
+                      contentStyle={{ backgroundColor: '#0F172A', border: 'none', borderRadius: '16px', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', color: '#fff' }}
+                      itemStyle={{ color: '#fff', fontSize: '12px' }}
                     />
-                    <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                    <Legend verticalAlign="bottom" height={40} iconType="circle" />
                  </PieChart>
               </ResponsiveContainer>
            </div>
         </div>
 
-        {/* 3.2 Process Breakup Bar */}
-        <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
-           <h4 className="text-sm font-bold text-slate-800 dark:text-white mb-8 flex items-center">
-             <Zap className="w-4 h-4 mr-2 text-brand-primary" /> Manufacturing Process Detail
+        {/* Volume Trend */}
+        <div className="bg-white dark:bg-slate-900 p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-sm group">
+           <h4 className="text-sm font-bold text-slate-800 dark:text-white mb-10 flex items-center">
+             <div className="w-4 h-4 bg-purple-500 rounded-md mr-3 shadow-lg shadow-purple-500/20"></div>
+             Volume Sensitivity Amortization
+           </h4>
+           <div className="h-[350px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                 <ComposedChart data={trendData}>
+                    <CartesianGrid stroke="#f1f5f9" vertical={false} strokeDasharray="5 5" />
+                    <XAxis dataKey="volume" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 'bold' }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                    <RechartsTooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }} />
+                    <Area type="monotone" dataKey="cost" fill="#EEF2FF" stroke="none" fillOpacity={0.6} />
+                    <Line type="monotone" dataKey="cost" stroke={COLORS.material} strokeWidth={4} dot={{ fill: COLORS.material, r: 6, strokeWidth: 0 }} activeDot={{ r: 8, strokeWidth: 4, stroke: '#fff' }} animationDuration={2000} />
+                 </ComposedChart>
+              </ResponsiveContainer>
+           </div>
+        </div>
+
+        {/* Buildup Waterfall */}
+        <div className="bg-white dark:bg-slate-900 p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-sm lg:col-span-2">
+           <h4 className="text-sm font-bold text-slate-800 dark:text-white mb-10 flex items-center">
+             <div className="w-4 h-4 bg-teal-500 rounded-md mr-3 shadow-lg shadow-teal-500/20"></div>
+             Price Accretion Model (Incremental Build-up)
            </h4>
            <div className="h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                 <BarChart data={processData} layout="vertical" margin={{ left: 40, right: 40 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0" />
-                    <XAxis type="number" hide />
-                    <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
-                    <RechartsTooltip cursor={{ fill: 'transparent' }} />
-                    <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={40}>
-                       {processData.map((entry, index) => (
-                         <Cell key={`cell-${index}`} fill={entry.fill} />
+                 <BarChart data={waterfallData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 'bold' }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                    <Bar dataKey="val" fill={COLORS.material} radius={[10, 10, 0, 0]} barSize={60} animationDuration={1500}>
+                       {waterfallData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={Object.values(COLORS)[index] || COLORS.material} />
                        ))}
                     </Bar>
                  </BarChart>
               </ResponsiveContainer>
            </div>
         </div>
-
-        {/* 3.3 Volume Sensitivity Curve */}
-        <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
-           <h4 className="text-sm font-bold text-slate-800 dark:text-white mb-8 flex items-center">
-             <TrendingUp className="w-4 h-4 mr-2 text-brand-primary" /> Cost Amortization vs Annual Volume
-           </h4>
-           <div className="h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                 <ComposedChart data={trendData}>
-                    <CartesianGrid stroke="#f1f5f9" vertical={false} />
-                    <XAxis dataKey="volume" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                    <RechartsTooltip />
-                    <Area type="monotone" dataKey="cost" fill="#f8fafc" stroke="none" />
-                    <Line type="monotone" dataKey="cost" stroke={COLORS.material} strokeWidth={3} dot={{ fill: COLORS.material, r: 4 }} activeDot={{ r: 6 }} />
-                 </ComposedChart>
-              </ResponsiveContainer>
-           </div>
-        </div>
-
-        {/* 3.4 Waterfall / Build Up */}
-        <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm">
-           <h4 className="text-sm font-bold text-slate-800 dark:text-white mb-8 flex items-center">
-             <Activity className="w-4 h-4 mr-2 text-brand-primary" /> Price Accretion Model
-           </h4>
-           <div className="h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                 <BarChart data={waterfallData} margin={{ top: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                    <Bar dataKey="val" fill={COLORS.material} radius={[6, 6, 0, 0]} barSize={35} />
-                 </BarChart>
-              </ResponsiveContainer>
-           </div>
-        </div>
       </div>
 
-      {/* SECTION 4: DETAILED TABLES */}
-      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-         <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-            <h4 className="text-sm font-bold text-slate-800 dark:text-white flex items-center">
-              <Info className="w-4 h-4 mr-2 text-slate-400" /> Engineering Audit Specification
-            </h4>
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Technical Data Pack</span>
+      {/* SECTION 4: DETAILED AUDIT TABLES */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+         <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 shadow-sm">
+            <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center">
+               <Layers className="w-3 h-3 mr-2" /> Material Computation
+            </h5>
+            <table className="w-full">
+               <tbody>
+                  <TableRow label="Polymer Feedstock" value={inputs.materialCode} highlight />
+                  <TableRow label="Net Part Weight" value={result.netWeight.toFixed(2)} unit="g" />
+                  <TableRow label="Runner System (Paid)" value={result.runnerWeight.toFixed(2)} unit="g" />
+                  <TableRow label="Resin Market Price" value={formatNumber(inputs.resinPriceOverride)} unit="INR/Kg" />
+                  <TableRow label="Allowed Regrind" value={result.scrapCredit > 0 ? 'Applicable' : '0%'} />
+                  <TableRow label="Total Shot Weight" value={result.shotWeight.toFixed(2)} unit="g" />
+               </tbody>
+            </table>
          </div>
-         <div className="grid grid-cols-1 lg:grid-cols-2">
-            <div className="p-6 border-r border-slate-100 dark:border-slate-800">
-               <h5 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Material Logic</h5>
-               <table className="w-full text-sm">
-                  <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
-                    <tr className="py-2 flex justify-between">
-                      <td className="text-slate-500">Resin Code</td>
-                      <td className="font-medium text-slate-700 dark:text-slate-200">{inputs.materialCode}</td>
-                    </tr>
-                    <tr className="py-2 flex justify-between">
-                      <td className="text-slate-500">Net Part Weight</td>
-                      <td className="font-medium text-slate-700 dark:text-slate-200">{result.netWeight.toFixed(2)} g</td>
-                    </tr>
-                    <tr className="py-2 flex justify-between">
-                      <td className="text-slate-500">Scrap Rate Applied</td>
-                      <td className="font-medium text-slate-700 dark:text-slate-200">{(inputs.scrapRate * 100).toFixed(1)}%</td>
-                    </tr>
-                    <tr className="py-2 flex justify-between">
-                      <td className="text-slate-500">Resin Cost / Kg</td>
-                      <td className="font-medium text-slate-700 dark:text-slate-200">{formatCurrency(inputs.resinPriceOverride)}</td>
-                    </tr>
-                  </tbody>
-               </table>
-            </div>
-            <div className="p-6">
-               <h5 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Molding Logic</h5>
-               <table className="w-full text-sm">
-                  <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
-                    <tr className="py-2 flex justify-between">
-                      <td className="text-slate-500">Machine Tonnage</td>
-                      <td className="font-medium text-slate-700 dark:text-slate-200">{result.selectedMachine?.tonnage} T</td>
-                    </tr>
-                    <tr className="py-2 flex justify-between">
-                      <td className="text-slate-500">Machine Hourly Rate</td>
-                      <td className="font-medium text-slate-700 dark:text-slate-200">{formatCurrency(result.selectedMachine?.mhr_inr || 0)}/hr</td>
-                    </tr>
-                    <tr className="py-2 flex justify-between">
-                      <td className="text-slate-500">Number of Cavities</td>
-                      <td className="font-medium text-slate-700 dark:text-slate-200">{result.numCavities}</td>
-                    </tr>
-                    <tr className="py-2 flex justify-between">
-                      <td className="text-slate-500">OEE Factor</td>
-                      <td className="font-medium text-slate-700 dark:text-slate-200">{(inputs.oee * 100).toFixed(0)}%</td>
-                    </tr>
-                  </tbody>
-               </table>
-            </div>
+
+         <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 shadow-sm">
+            <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center">
+               <Zap className="w-3 h-3 mr-2" /> Manufacturing Derivation
+            </h5>
+            <table className="w-full">
+               <tbody>
+                  <TableRow label="Machine Cluster" value={`${result.selectedMachine?.tonnage} Ton`} highlight />
+                  <TableRow label="MHR (Machine Hourly Rate)" value={formatNumber(result.selectedMachine?.mhr_inr || 0)} unit="INR" />
+                  <TableRow label="Optimal Cavity Count" value={result.numCavities} unit="Cav" />
+                  <TableRow label="Cycle Duration" value={result.cycleTime.toFixed(1)} unit="sec" />
+                  <TableRow label="Production OEE" value={`${(inputs.oee * 100).toFixed(0)}%`} />
+                  <TableRow label="Hourly Yield (Net)" value={result.actualPPH.toFixed(0)} unit="PPH" />
+               </tbody>
+            </table>
          </div>
       </div>
 
-      {/* SECTION 5: ASSUMPTIONS & RISK PROFILE */}
-      <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/30 p-8 rounded-3xl">
-         <div className="flex items-start space-x-4">
-            <ShieldAlert className="w-8 h-8 text-amber-500 flex-shrink-0" />
+      {/* SECTION 5: RISK & ASSUMPTIONS PANEL */}
+      <div className="bg-slate-900 dark:bg-black rounded-[2.5rem] p-12 text-white shadow-2xl relative overflow-hidden">
+         <div className="absolute bottom-0 right-0 p-12 opacity-5 pointer-events-none"><ShieldAlert className="w-64 h-64" /></div>
+         <div className="relative z-10 grid grid-cols-1 md:grid-cols-3 gap-12">
             <div className="space-y-4">
-               <div>
-                  <h4 className="text-lg font-bold text-amber-900 dark:text-amber-200">Assumptions & Risk Profile</h4>
-                  <p className="text-sm text-amber-700 dark:text-amber-400 mt-1">Estimations are based on the following key sensitivity factors. Any change in these variables will impact final pricing.</p>
-               </div>
-               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
-                  <div className="space-y-1">
-                     <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">Market Volatility</p>
-                     <p className="text-sm font-bold text-amber-900 dark:text-amber-100">Resin Price Sensitivity</p>
-                     <p className="text-xs text-amber-700 dark:text-amber-500">A ±10% shift in crude price impacts part cost by ≈ {((result.materialCostPerPart * 0.1 / result.totalPartCost) * 100).toFixed(1)}%.</p>
-                  </div>
-                  <div className="space-y-1">
-                     <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">Production Risk</p>
-                     <p className="text-sm font-bold text-amber-900 dark:text-amber-100">OEE Stability</p>
-                     <p className="text-xs text-amber-700 dark:text-amber-500">Calculations assume steady-state {inputs.oee * 100}% OEE. Startup phase scrap may exceed estimates.</p>
-                  </div>
-                  <div className="space-y-1">
-                     <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">Financial Risk</p>
-                     <p className="text-sm font-bold text-amber-900 dark:text-amber-100">Exchange Rate (USD/INR)</p>
-                     <p className="text-xs text-amber-700 dark:text-amber-500">Current model uses fixed conversion. Import materials are subject to FX fluctuations.</p>
-                  </div>
-               </div>
+               <h4 className="text-xl font-bold flex items-center"><DollarSign className="w-6 h-6 mr-3 text-brand-primary" /> Market Risk</h4>
+               <p className="text-slate-400 text-sm leading-relaxed">Resin costs are tied to crude oil futures. A 5% market surge impacts unit cost by <span className="text-white font-bold">{((result.materialCostPerPart * 0.05 / result.totalPartCost) * 100).toFixed(1)}%</span>.</p>
+            </div>
+            <div className="space-y-4">
+               <h4 className="text-xl font-bold flex items-center"><Activity className="w-6 h-6 mr-3 text-teal-400" /> Ops Efficiency</h4>
+               <p className="text-slate-400 text-sm leading-relaxed">Calculations assume steady-state {inputs.oee * 100}% OEE. Startup scrap is excluded from amortized pricing.</p>
+            </div>
+            <div className="space-y-4">
+               <h4 className="text-xl font-bold flex items-center"><Layers className="w-6 h-6 mr-3 text-amber-400" /> Tooling Life</h4>
+               <p className="text-slate-400 text-sm leading-relaxed">Cavity selection is optimized for the {formatNumber(inputs.annualVolume, 0)} annual target. Tool wear might affect scrap rates after 1M cycles.</p>
             </div>
          </div>
+      </div>
+
+      {/* TECHNICAL FOOTER (For Prints) */}
+      <div className="pt-12 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+         <div>EstiMate Pro Technical Report &copy; {new Date().getFullYear()}</div>
+         <div>Strictly Confidential • {metadata.projectId} • v{metadata.version}</div>
       </div>
 
     </div>

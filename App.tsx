@@ -1,49 +1,51 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  Calculator, Plus, Trash2, Sun, Moon, Download, FileText, Loader2, ArrowRight, 
-  CheckCircle, Save, History, Box, Search, Filter, ExternalLink, Copy, Archive, 
-  MoreVertical, ArrowUpDown, ChevronDown, BookOpen, Layers, Zap, TrendingUp, BarChart 
+  Plus, Trash2, Sun, Moon, Download, FileText, ArrowRight, 
+  CheckCircle, Save, BookOpen, Layers, Zap, TrendingUp, BarChart,
+  Search, Info, Database, MoreVertical, Package, Clock, ShieldAlert, Users, LayoutDashboard, ChevronRight, Printer, Filter, Copy, ArrowUpDown, Calculator, Lock, PlusCircle, X, ShoppingBag
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
-import { UserInputs, CalculationResult, ShapeType, RunnerType, ProjectMetadata, ProjectStatus, Template } from './types';
+import { UserInputs, CalculationResult, ShapeType, RunnerType, ProjectMetadata, ProjectStatus, WeightSource, User, PurchasedItem } from './types';
 import { MATERIALS, DEFAULT_TEMPLATES } from './constants';
 import { InputField, InputGroup } from './components/InputSection';
 import { ResultsSection } from './components/ResultsSection';
 import { calculateCosts } from './utils/calculations';
 import { Sidebar } from './components/Sidebar';
 import { ReportsSection } from './components/ReportsSection';
+import { Auth } from './components/Auth';
 
-const generateProjectId = () => {
+const generateSequentialProjectId = (existingEstimates: SavedEstimate[]) => {
   const year = new Date().getFullYear();
-  const random = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
-  return `EST-IM-${year}-${random}`;
+  const prefix = `EST-IM-${year}-`;
+  const yearIds = existingEstimates.map(e => e.metadata.projectId).filter(id => id.startsWith(prefix));
+  let nextSequence = 1;
+  if (yearIds.length > 0) {
+    const sequences = yearIds.map(id => {
+      const parts = id.split('-');
+      const seqStr = parts[parts.length - 1];
+      const parsed = parseInt(seqStr, 10);
+      return isNaN(parsed) ? 0 : parsed;
+    });
+    nextSequence = Math.max(...sequences) + 1;
+  }
+  return `${prefix}${nextSequence.toString().padStart(6, '0')}`;
 };
 
-const INITIAL_METADATA: ProjectMetadata = {
-  projectId: generateProjectId(),
-  projectName: '',
-  customerName: '',
-  partName: '',
-  estimationType: 'Injection Molding',
-  createdBy: 'Current User',
-  createdDate: new Date().toLocaleDateString(),
-  status: 'Draft',
-  version: 1,
-};
-
-const INITIAL_INPUTS: UserInputs = {
-  length: 100,
-  width: 50,
-  height: 20,
-  wallThickness: 2,
+const EMPTY_INPUTS: UserInputs = {
+  length: null,
+  width: null,
+  height: null,
+  wallThickness: null,
   projectedArea: null,
   shapeType: ShapeType.RECTANGLE,
   volume: null,
   weight: null,
-  annualVolume: 100000,
+  weightSource: 'calculated',
+  annualVolume: null,
   workingDays: 250,
-  shiftsPerDay: 2,
+  shiftsPerDay: 3,
   hoursPerShift: 8,
   oee: 0.85,
   scrapRate: 0.02,
@@ -55,72 +57,101 @@ const INITIAL_INPUTS: UserInputs = {
   laborOverhead: 0.3,
   useRobot: false,
   useConveyor: false,
-  resinPriceOverride: 105,
+  resinPriceOverride: 105, 
   packagingCostPerPart: 0.50,
   sgaRate: 0.1,
   profitRate: 0.15,
   purchasedItems: [],
 };
 
+const INITIAL_METADATA = (id: string, userName: string): ProjectMetadata => ({
+  projectId: id,
+  projectName: '',
+  customerName: '',
+  partName: '',
+  estimationType: 'Injection Molding',
+  createdBy: userName,
+  createdDate: new Date().toLocaleDateString(),
+  status: 'Draft',
+  version: 1,
+});
+
 interface SavedEstimate {
   metadata: ProjectMetadata;
   inputs: UserInputs;
+  result: CalculationResult | null;
   updatedAt: string;
-  totalCost: number;
 }
 
-type ViewMode = 'dashboard' | 'new-estimate-step1' | 'new-estimate-workspace' | 'estimates' | 'templates' | 'reports';
+type ViewMode = 'dashboard' | 'new-estimate-step1' | 'new-estimate-workspace' | 'estimates' | 'reports';
 
 export default function App() {
+  const [user, setUser] = useState<User | null>(null);
   const [view, setView] = useState<ViewMode>('dashboard');
-  const [metadata, setMetadata] = useState<ProjectMetadata>(INITIAL_METADATA);
-  const [inputs, setInputs] = useState<UserInputs>(INITIAL_INPUTS);
-  const [result, setResult] = useState<CalculationResult | null>(null);
   const [savedEstimates, setSavedEstimates] = useState<SavedEstimate[]>([]);
+  const [metadata, setMetadata] = useState<ProjectMetadata>(INITIAL_METADATA('PENDING', 'Guest'));
+  const [inputs, setInputs] = useState<UserInputs>(EMPTY_INPUTS);
+  const [result, setResult] = useState<CalculationResult | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isExportingPDF, setIsExportingPDF] = useState(false);
-  
-  // Library State
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<ProjectStatus | 'All'>('All');
-  const [typeFilter, setTypeFilter] = useState<string>('All');
-  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'updatedAt', direction: 'desc' });
 
   useEffect(() => {
-    const stored = localStorage.getItem('esti_mate_pro_records');
+    const stored = localStorage.getItem('esti_mate_pro_records_v2');
     if (stored) {
-      try {
-        setSavedEstimates(JSON.parse(stored));
-      } catch (e) {
-        console.error("Failed to parse stored estimates");
-      }
+      try { setSavedEstimates(JSON.parse(stored)); } catch (e) { console.error("Parse failed"); }
+    }
+    const storedUser = localStorage.getItem('esti_mate_pro_user');
+    if (storedUser) {
+      try { setUser(JSON.parse(storedUser)); } catch (e) { console.error("User parse failed"); }
     }
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('esti_mate_pro_records', JSON.stringify(savedEstimates));
+    localStorage.setItem('esti_mate_pro_records_v2', JSON.stringify(savedEstimates));
   }, [savedEstimates]);
 
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [isDarkMode]);
+    if (user) localStorage.setItem('esti_mate_pro_user', JSON.stringify(user));
+    else localStorage.removeItem('esti_mate_pro_user');
+  }, [user]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-        const res = calculateCosts(inputs);
-        setResult(res);
-    }, 200);
-    return () => clearTimeout(timer);
-  }, [inputs]);
+    if (isDarkMode) document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
+  }, [isDarkMode]);
 
-  const startNewEstimate = (templateInputs?: UserInputs) => {
-    setMetadata({ ...INITIAL_METADATA, projectId: generateProjectId() });
-    setInputs(templateInputs || INITIAL_INPUTS);
+  const handleLogout = () => {
+    setUser(null);
+    setView('dashboard');
+  };
+
+  const handleRunCalculation = () => {
+    const res = calculateCosts(inputs);
+    setResult(res);
+    setMetadata(prev => ({ ...prev, lastCalculatedAt: new Date().toLocaleString() } as any));
+  };
+
+  // Run calculation automatically when inputs change to keep workspace updated
+  useEffect(() => {
+    if (view === 'new-estimate-workspace') {
+      const missing = [];
+      if (inputs.length === null) missing.push("L");
+      if (inputs.width === null) missing.push("W");
+      if (inputs.height === null) missing.push("H");
+      if (inputs.annualVolume === null) missing.push("Vol");
+      
+      if (missing.length === 0) {
+        handleRunCalculation();
+      }
+    }
+  }, [inputs, view]);
+
+  const startNewEstimate = () => {
+    const newId = generateSequentialProjectId(savedEstimates);
+    setMetadata(INITIAL_METADATA(newId, user?.name || 'User'));
+    setInputs(EMPTY_INPUTS);
+    setResult(null);
     setView('new-estimate-step1');
   };
 
@@ -129,15 +160,20 @@ export default function App() {
   };
 
   const updateInput = (key: keyof UserInputs, value: any) => {
-    if (metadata.status === 'Final' || metadata.status === 'Sold') return;
-    setInputs(prev => ({
-      ...prev,
-      [key]: typeof prev[key] === 'number' && value !== '' ? parseFloat(value) : value
-    }));
+    setInputs(prev => {
+      let nextValue = value;
+      if (value === '' || value === null || value === undefined) {
+        nextValue = null;
+      } else if (typeof value === 'string' && !isNaN(parseFloat(value))) {
+        if (!value.endsWith('.')) {
+          nextValue = parseFloat(value);
+        }
+      }
+      return { ...prev, [key]: nextValue };
+    });
   };
 
   const handleMaterialChange = (newCode: string) => {
-    if (metadata.status === 'Final' || metadata.status === 'Sold') return;
     const selectedMat = MATERIALS.find(m => m.code === newCode);
     setInputs(prev => ({
       ...prev,
@@ -146,474 +182,310 @@ export default function App() {
     }));
   };
 
-  const saveToStorage = (isFinalizing: boolean = false) => {
-    const newStatus: ProjectStatus = isFinalizing ? 'Final' : metadata.status;
-    const updatedMetadata = { ...metadata, status: newStatus };
-    if (isFinalizing) setMetadata(updatedMetadata);
+  const addPurchasedItem = () => {
+    const newItem: PurchasedItem = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: 'New Component',
+      price: 0,
+      scrapRate: 0.02
+    };
+    setInputs(prev => ({
+      ...prev,
+      purchasedItems: [...prev.purchasedItems, newItem]
+    }));
+  };
 
-    const calcResult = calculateCosts(inputs);
+  const removePurchasedItem = (id: string) => {
+    setInputs(prev => ({
+      ...prev,
+      purchasedItems: prev.purchasedItems.filter(item => item.id !== id)
+    }));
+  };
 
+  const updatePurchasedItem = (id: string, key: keyof PurchasedItem, value: any) => {
+    setInputs(prev => ({
+      ...prev,
+      purchasedItems: prev.purchasedItems.map(item => item.id === id ? { ...item, [key]: value } : item)
+    }));
+  };
+
+  const finalizeProject = () => {
+    const res = calculateCosts(inputs);
+    setResult(res);
+    const updatedMetadata = { ...metadata, status: 'Final' as ProjectStatus };
+    setMetadata(updatedMetadata);
     setSavedEstimates(prev => {
       const filtered = prev.filter(e => e.metadata.projectId !== metadata.projectId);
-      return [
-        { 
-          metadata: updatedMetadata, 
-          inputs, 
-          updatedAt: new Date().toLocaleString(),
-          totalCost: calcResult.totalPartCost
-        },
-        ...filtered
-      ];
+      return [{ metadata: updatedMetadata, inputs, result: res, updatedAt: new Date().toLocaleString() }, ...filtered];
     });
+    alert("Project Finalized.");
   };
 
-  const handleFinalize = () => {
-    saveToStorage(true);
-    alert("Estimate finalized and locked.");
-  };
-
-  const loadEstimate = (est: SavedEstimate, targetView: ViewMode = 'new-estimate-workspace') => {
+  const loadEstimate = (est: SavedEstimate, target: ViewMode = 'new-estimate-workspace') => {
     setMetadata(est.metadata);
     setInputs(est.inputs);
-    setView(targetView);
-  };
-
-  const deleteEstimate = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (confirm("Are you sure you want to delete this estimate?")) {
-      setSavedEstimates(prev => prev.filter(item => item.metadata.projectId !== id));
-    }
-  };
-
-  const duplicateEstimate = (est: SavedEstimate, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const newId = generateProjectId();
-    const newMetadata: ProjectMetadata = {
-      ...est.metadata,
-      projectId: newId,
-      projectName: `${est.metadata.projectName} (Copy)`,
-      status: 'Draft',
-      createdDate: new Date().toLocaleDateString(),
-    };
-    setSavedEstimates(prev => [
-      { metadata: newMetadata, inputs: est.inputs, updatedAt: new Date().toLocaleString(), totalCost: est.totalCost },
-      ...prev
-    ]);
-  };
-
-  const archiveEstimate = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setSavedEstimates(prev => prev.map(est => 
-      est.metadata.projectId === id ? { ...est, metadata: { ...est.metadata, status: 'Archived' as ProjectStatus } } : est
-    ));
-  };
-
-  const handleExportExcel = () => {
-    if (!result) return;
-    const esc = (val: string | number) => `"${String(val).replace(/"/g, '""')}"`;
-    const rows = [
-      ['Category', 'Parameter', 'Value', 'Unit'],
-      ['Project', 'Reference', metadata.projectId, ''],
-      ['Project', 'Name', metadata.projectName, ''],
-      ['Project', 'Date', metadata.createdDate, ''],
-      [],
-      ['Total', 'Final Part Cost', result.totalPartCost.toFixed(4), 'INR'],
-    ];
-    const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.map(esc).join(",")).join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `Estimate_${metadata.projectId}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    setResult(est.result);
+    setView(target);
   };
 
   const handleExportPDF = async () => {
     const input = document.getElementById('report-view-root') || document.getElementById('pdf-capture-root');
     if (!input) return;
     setIsExportingPDF(true);
+    window.scrollTo(0, 0);
     try {
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(r => setTimeout(r, 1500));
       const canvas = await html2canvas(input, { 
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: isDarkMode ? '#0F172A' : '#ffffff'
+        scale: 3, useCORS: true, logging: false, backgroundColor: isDarkMode ? '#0F172A' : '#ffffff',
+        windowWidth: document.documentElement.offsetWidth, windowHeight: input.scrollHeight
       });
-      const imgData = canvas.toDataURL('image/png');
+      const imgData = canvas.toDataURL('image/png', 1.0);
       const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`Report_${metadata.projectId}.pdf`);
-    } finally {
-      setIsExportingPDF(false);
-    }
+      const imgWidth = pdf.internal.pageSize.getWidth() - 20;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      pdf.addImage(imgData, 'PNG', 10, 10, imgWidth, imgHeight, undefined, 'FAST');
+      pdf.save(`Estimation_Report_${metadata.projectId}.pdf`);
+    } catch (err) {
+      console.error(err);
+    } finally { setIsExportingPDF(false); }
   };
 
-  const handleSort = (key: string) => {
-    setSortConfig(prev => ({
-      key,
-      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
-    }));
-  };
+  if (!user) {
+    return <Auth onLogin={setUser} />;
+  }
 
-  const filteredEstimates = useMemo(() => {
-    let res = savedEstimates.filter(e => 
-      (statusFilter === 'All' ? e.metadata.status !== 'Archived' : e.metadata.status === statusFilter) &&
-      (typeFilter === 'All' ? true : e.metadata.estimationType === typeFilter) &&
-      (e.metadata.projectName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-       e.metadata.projectId.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
-    res.sort((a, b) => {
-      const aVal = a.metadata[sortConfig.key as keyof ProjectMetadata] || a[sortConfig.key as keyof SavedEstimate];
-      const bVal = b.metadata[sortConfig.key as keyof ProjectMetadata] || b[sortConfig.key as keyof SavedEstimate];
-      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
-      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-      return 0;
-    });
-    return res;
-  }, [savedEstimates, searchTerm, statusFilter, typeFilter, sortConfig]);
-
-  const kpis = useMemo(() => {
-    return {
-      total: savedEstimates.length,
-      drafts: savedEstimates.filter(e => e.metadata.status === 'Draft').length,
-      finalized: savedEstimates.filter(e => e.metadata.status === 'Final').length,
-      value: savedEstimates.reduce((acc, cur) => acc + (cur.totalCost || 0), 0)
-    };
-  }, [savedEstimates]);
-
-  const renderProgressIndicator = () => {
-    const steps = [
-      { id: 'new-estimate-step1', label: 'Metadata' },
-      { id: 'new-estimate-workspace', label: 'Inputs & Calculation' },
-    ];
-    const currentStepIndex = steps.findIndex(s => s.id === view);
-    return (
-      <div className="flex items-center space-x-4 mb-8">
-        {steps.map((step, idx) => (
-          <React.Fragment key={step.id}>
-            <div className="flex items-center space-x-2">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${idx <= currentStepIndex ? 'bg-brand-primary text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-500'}`}>
-                {idx < currentStepIndex ? <CheckCircle className="w-5 h-5" /> : idx + 1}
-              </div>
-              <span className={`text-sm font-medium ${idx <= currentStepIndex ? 'text-slate-800 dark:text-white' : 'text-slate-500'}`}>{step.label}</span>
-            </div>
-            {idx < steps.length - 1 && <div className="h-px w-8 bg-slate-300 dark:bg-slate-700"></div>}
-          </React.Fragment>
-        ))}
-      </div>
-    );
-  };
-
-  const renderTemplates = () => (
-    <div className="space-y-6 animate-fade-in">
-       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Templates Library</h1>
-           <p className="text-slate-500 text-sm">Jumpstart your workflow with standardized cost models.</p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {DEFAULT_TEMPLATES.map((tmpl) => (
-          <div key={tmpl.id} className="bg-brand-cardLight dark:bg-brand-cardDark rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col group hover:shadow-lg transition-all border-b-4 hover:border-brand-primary">
-            <div className="p-5 flex-1">
-               <div className="flex justify-between items-start mb-4">
-                  <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-500 group-hover:text-brand-primary group-hover:bg-blue-50 transition-colors">
-                    <BookOpen className="w-5 h-5" />
-                  </div>
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${tmpl.volumeProfile === 'High' ? 'bg-green-100 text-green-700' : tmpl.volumeProfile === 'Medium' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {tmpl.volumeProfile} Vol
-                  </span>
-               </div>
-               <h3 className="font-bold text-slate-800 dark:text-white mb-2">{tmpl.name}</h3>
-               <p className="text-xs text-slate-500 line-clamp-2 mb-4 leading-relaxed">{tmpl.description}</p>
-               
-               <div className="space-y-2 pt-4 border-t border-slate-50 dark:border-slate-800">
-                  <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
-                     <span>Process</span>
-                     <span className="text-slate-700 dark:text-slate-300">{tmpl.type}</span>
-                  </div>
-                  <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
-                     <span>Default Mat.</span>
-                     <span className="text-slate-700 dark:text-slate-300">{tmpl.inputs.materialCode}</span>
-                  </div>
-               </div>
-            </div>
-            <div className="p-4 bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between">
-               <span className="text-[10px] text-slate-400">Updated: {tmpl.lastUpdated}</span>
-               <button 
-                onClick={() => startNewEstimate(tmpl.inputs)}
-                className="text-brand-primary font-bold text-xs flex items-center hover:translate-x-1 transition-transform"
-               >
-                 Use Template <ArrowRight className="w-3 h-3 ml-1" />
-               </button>
-            </div>
-          </div>
-        ))}
-        <div className="bg-brand-cardLight dark:bg-brand-cardDark rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 flex flex-col items-center justify-center p-8 text-center opacity-60 hover:opacity-100 transition-opacity cursor-pointer">
-           <Plus className="w-8 h-8 text-slate-400 mb-3" />
-           <p className="text-sm font-bold text-slate-500">Add Custom Template</p>
-           <p className="text-[10px] text-slate-400 mt-1">Convert an estimate to template</p>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderEstimatesList = () => (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-           <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Estimate Repository</h1>
-           <p className="text-slate-500 text-sm">Review, duplicate, and manage your cost portfolio.</p>
-        </div>
-        <button onClick={() => startNewEstimate()} className="flex items-center px-4 py-2.5 bg-brand-primary text-white rounded-xl font-bold text-sm shadow-lg shadow-blue-900/20 hover:scale-[1.02] transition-all">
-          <Plus className="w-4 h-4 mr-2" /> New Estimate
-        </button>
-      </div>
-
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-         {[
-           { label: 'Total Portfolio', value: kpis.total, color: 'text-slate-800' },
-           { label: 'Drafts Pending', value: kpis.drafts, color: 'text-amber-600' },
-           { label: 'Finalized', value: kpis.finalized, color: 'text-green-600' },
-           { label: 'Avg Unit Cost', value: `₹${(kpis.value / (kpis.total || 1)).toFixed(2)}`, color: 'text-slate-800' }
-         ].map(k => (
-           <div key={k.label} className="bg-brand-cardLight dark:bg-brand-cardDark p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{k.label}</p>
-             <p className={`text-xl font-bold dark:text-white ${k.color}`}>{k.value}</p>
+  const renderWorkspace = () => (
+    <div id="pdf-capture-root" className="grid grid-cols-1 xl:grid-cols-12 gap-10 animate-slide-up">
+      <div className="xl:col-span-8 space-y-8 pb-32">
+        <div className="flex items-center justify-between">
+           <div>
+              <h1 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">{metadata.projectName || 'Estimation Workspace'}</h1>
+              <p className="text-xs text-slate-400 mt-1 font-medium">{metadata.projectId} • Real-time Calculations Active</p>
            </div>
-         ))}
-      </div>
-
-      <div className="bg-brand-cardLight dark:bg-brand-cardDark p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-wrap items-center gap-4">
-        <div className="flex-1 min-w-[240px] relative">
-           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-           <input 
-             type="text" 
-             placeholder="Search projects..." 
-             className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none"
-             value={searchTerm}
-             onChange={(e) => setSearchTerm(e.target.value)}
-           />
-        </div>
-      </div>
-
-      <div className="bg-brand-cardLight dark:bg-brand-cardDark rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden overflow-x-auto">
-        <table className="w-full text-left border-collapse min-w-[800px]">
-           <thead className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800">
-             <tr>
-               <th onClick={() => handleSort('projectId')} className="px-6 py-4 text-xs font-bold text-slate-500 uppercase cursor-pointer">Project ID</th>
-               <th onClick={() => handleSort('projectName')} className="px-6 py-4 text-xs font-bold text-slate-500 uppercase cursor-pointer">Name / Customer</th>
-               <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Type</th>
-               <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase">Status</th>
-               <th onClick={() => handleSort('totalCost')} className="px-6 py-4 text-xs font-bold text-slate-500 uppercase cursor-pointer">Total Cost</th>
-               <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase text-right">Actions</th>
-             </tr>
-           </thead>
-           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-             {filteredEstimates.length === 0 ? (
-               <tr><td colSpan={6} className="px-6 py-20 text-center text-slate-400 italic">No records found.</td></tr>
-             ) : filteredEstimates.map(est => (
-               <tr key={est.metadata.projectId} onClick={() => loadEstimate(est)} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer group">
-                 <td className="px-6 py-4 font-mono text-xs font-bold text-slate-400 group-hover:text-brand-primary">{est.metadata.projectId}</td>
-                 <td className="px-6 py-4">
-                    <div className="font-bold text-slate-800 dark:text-white">{est.metadata.projectName}</div>
-                    <div className="text-xs text-slate-500">{est.metadata.customerName}</div>
-                 </td>
-                 <td className="px-6 py-4 text-xs">{est.metadata.estimationType}</td>
-                 <td className="px-6 py-4">
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${est.metadata.status === 'Final' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{est.metadata.status}</span>
-                 </td>
-                 <td className="px-6 py-4 font-mono text-sm font-bold">₹{est.totalCost.toFixed(4)}</td>
-                 <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                       <button onClick={(e) => { e.stopPropagation(); loadEstimate(est, 'reports'); }} className="p-1.5 text-slate-400 hover:text-brand-primary" title="View Analytics Report"><BarChart className="w-4 h-4" /></button>
-                       <button onClick={(e) => duplicateEstimate(est, e)} className="p-1.5 text-slate-400 hover:text-brand-primary" title="Duplicate"><Copy className="w-4 h-4" /></button>
-                       <button onClick={(e) => deleteEstimate(est.metadata.projectId, e)} className="p-1.5 text-slate-400 hover:text-red-500" title="Delete"><Trash2 className="w-4 h-4" /></button>
-                    </div>
-                 </td>
-               </tr>
-             ))}
-           </tbody>
-        </table>
-      </div>
-    </div>
-  );
-
-  const renderView = () => {
-    if (view === 'reports' && result) {
-      return (
-        <ReportsSection 
-          metadata={metadata} 
-          inputs={inputs} 
-          result={result} 
-          onExportPDF={handleExportPDF}
-          onExportExcel={handleExportExcel}
-        />
-      );
-    }
-    if (view === 'estimates') return renderEstimatesList();
-    if (view === 'templates') return renderTemplates();
-
-    if (view === 'new-estimate-step1') {
-      return (
-        <div className="max-w-2xl mx-auto mt-10 animate-slide-up">
-          <div className="bg-brand-cardLight dark:bg-brand-cardDark rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-            <div className="p-8 border-b border-slate-100 dark:border-slate-800">
-               <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Project Metadata</h1>
-               <p className="text-slate-500 text-sm mt-1">Configure identity for {metadata.projectId}</p>
-            </div>
-            <div className="p-8 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <InputField label="Project Name" value={metadata.projectName} onChange={(v) => updateMetadata('projectName', v)} />
-                <InputField label="Customer Name" value={metadata.customerName} onChange={(v) => updateMetadata('customerName', v)} />
-                <InputField label="Part Name" value={metadata.partName} onChange={(v) => updateMetadata('partName', v)} />
-              </div>
-              <div className="pt-6 flex justify-end">
-                <button 
-                  onClick={() => setView('new-estimate-workspace')}
-                  disabled={!metadata.projectName || !metadata.customerName}
-                  className="px-8 py-3 bg-brand-primary text-white rounded-xl font-bold disabled:opacity-50"
-                >
-                  Configure Parts <ArrowRight className="w-4 h-4 inline ml-2" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div id="pdf-capture-root" className="grid grid-cols-1 xl:grid-cols-12 gap-8">
-        <div className="xl:col-span-5 space-y-6 animate-slide-up">
-          <div className="flex items-center justify-between">
-            <div>
-               <h1 className="text-xl font-bold text-slate-800 dark:text-white">{metadata.projectName || 'Estimate Inputs'}</h1>
-               <p className="text-xs text-slate-400">{metadata.projectId} • v{metadata.version}</p>
-            </div>
-            {metadata.status === 'Final' && <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-[10px] font-bold uppercase">Finalized</span>}
-          </div>
-
-          <InputGroup title="1. Geometry & Part">
-            <InputField label="Length (mm)" value={inputs.length} onChange={(v) => updateInput('length', v)} type="number" />
-            <InputField label="Width (mm)" value={inputs.width} onChange={(v) => updateInput('width', v)} type="number" />
-            <InputField label="Thickness (mm)" value={inputs.wallThickness} onChange={(v) => updateInput('wallThickness', v)} type="number" />
-            <InputField label="Shape" value={inputs.shapeType} onChange={(v) => updateInput('shapeType', v)} type="select" options={Object.keys(ShapeType).map(k => ({ label: k, value: k }))} />
-          </InputGroup>
-
-          <InputGroup title="2. Material & Tooling">
-            <InputField label="Material" value={inputs.materialCode} onChange={(v) => handleMaterialChange(v)} type="select" options={MATERIALS.map(m => ({ label: m.name, value: m.code }))} />
-            <InputField label="Runner Type" value={inputs.runnerType} onChange={(v) => updateInput('runnerType', v)} type="select" options={[{ label: 'Hot', value: RunnerType.HOT }, { label: 'Cold 2-Pl', value: RunnerType.COLD_2_PLATE }]} />
-            <InputField label="Resin Cost" value={inputs.resinPriceOverride} onChange={(v) => updateInput('resinPriceOverride', v)} type="number" />
-          </InputGroup>
-
-          <InputGroup title="3. Production">
-            <InputField label="Annual Vol." value={inputs.annualVolume} onChange={(v) => updateInput('annualVolume', v)} type="number" step="1" />
-            <InputField label="OEE" value={inputs.oee} onChange={(v) => updateInput('oee', v)} type="number" step="0.01" />
-            <InputField label="Use Robot" value={inputs.useRobot ? 1 : 0} onChange={(v) => updateInput('useRobot', v)} type="checkbox" />
-          </InputGroup>
-
-          <div className="flex space-x-3">
-             <button onClick={handleFinalize} className="flex-1 py-3 bg-brand-primary text-white rounded-xl font-bold shadow-lg shadow-blue-900/10">Finalize</button>
-             <button onClick={() => saveToStorage()} className="p-3 bg-slate-100 dark:bg-slate-800 rounded-xl"><Save className="w-5 h-5" /></button>
-          </div>
-        </div>
-
-        <div className="xl:col-span-7">
-          <div className="sticky top-24">
-            {result ? <ResultsSection result={result} /> : <div className="p-20 text-center text-slate-400">Loading...</div>}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <div className="min-h-screen flex bg-brand-bgLight dark:bg-brand-bgDark transition-colors duration-200">
-      <Sidebar 
-        isOpen={isSidebarOpen} 
-        toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
-        onNewEstimate={() => startNewEstimate()} 
-        activeView={view}
-        onViewChange={(v) => setView(v as ViewMode)}
-      />
-
-      <div className={`flex-1 flex flex-col transition-all duration-300 ${isSidebarOpen ? 'ml-64' : 'ml-20'}`}>
-        <header className="h-16 bg-brand-cardLight dark:bg-brand-cardDark border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30 px-6 flex items-center justify-between shadow-sm">
-           <div className="flex items-center">
-             <h2 className="text-lg font-bold text-slate-800 dark:text-white">{view === 'dashboard' ? 'Overview' : view.charAt(0).toUpperCase() + view.slice(1)}</h2>
-             {view === 'reports' && metadata && (
-               <span className="ml-3 px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded text-[10px] font-mono">{metadata.projectId}</span>
-             )}
+           <div className="flex items-center gap-2">
+              <button onClick={finalizeProject} className="px-5 py-3 bg-white dark:bg-slate-800 text-brand-primary dark:text-blue-400 rounded-2xl font-bold text-xs flex items-center border border-brand-primary/20 hover:bg-blue-50 transition-colors shadow-sm"><Lock className="w-4 h-4 mr-2" /> Finalize Project</button>
+              {result && <button onClick={() => setView('reports')} className="px-5 py-3 bg-brand-primary text-white rounded-2xl font-bold text-xs flex items-center shadow-lg shadow-blue-500/20"><BarChart className="w-4 h-4 mr-2" /> Full Report</button>}
            </div>
-           <div className="flex items-center space-x-4">
-              {view === 'reports' && (
-                 <button onClick={() => setView('estimates')} className="text-sm font-bold text-brand-primary hover:underline">Back to List</button>
-              )}
-              <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 rounded-full text-slate-500 hover:bg-slate-100 transition-colors">
-                {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+        </div>
+
+        {/* 1. Geometry Section */}
+        <InputGroup title="1. Part Geometry & Tonnage Requirement">
+          <InputField label="Part Length" value={inputs.length ?? ''} onChange={(v) => updateInput('length', v)} type="number" suffix="mm" />
+          <InputField label="Part Width" value={inputs.width ?? ''} onChange={(v) => updateInput('width', v)} type="number" suffix="mm" />
+          <InputField label="Part Height" value={inputs.height ?? ''} onChange={(v) => updateInput('height', v)} type="number" suffix="mm" />
+          <InputField label="Wall Thickness" value={inputs.wallThickness ?? ''} onChange={(v) => updateInput('wallThickness', v)} type="number" suffix="mm" />
+          <InputField label="Shape Profile" value={inputs.shapeType} onChange={(v) => updateInput('shapeType', v)} type="select" options={Object.keys(ShapeType).map(k => ({ label: k, value: k }))} />
+          <InputField label="Part Weight (Input)" value={inputs.weight ?? ''} onChange={(v) => updateInput('weight', v)} type="number" suffix="g" />
+          
+          {/* Intermediate Geometry Calculations */}
+          {result && (
+            <>
+              <InputField label="Computed Volume" value={result.volumeMm3.toFixed(2)} isCalculated suffix="mm³" />
+              <InputField label="Projected Area" value={result.projectedAreaCm2.toFixed(2)} isCalculated suffix="cm²" />
+              <InputField label="Required Tonnage" value={result.requiredTonnage.toFixed(0)} isCalculated suffix="T" />
+              <InputField label="Net Weight (Calc)" value={result.netWeight.toFixed(2)} isCalculated suffix="g" />
+            </>
+          )}
+        </InputGroup>
+
+        {/* 2. Production & Machine Metrics */}
+        <InputGroup title="2. Production Logistics & Machine Selection">
+          <InputField label="Material" value={inputs.materialCode} onChange={(v) => handleMaterialChange(v)} type="select" options={MATERIALS.map(m => ({ label: m.name, value: m.code }))} />
+          <InputField label="Annual Volume" value={inputs.annualVolume ?? ''} onChange={(v) => updateInput('annualVolume', v)} type="number" suffix="units" />
+          <InputField label="Runner System" value={inputs.runnerType} onChange={(v) => updateInput('runnerType', v)} type="select" options={[{ label: 'Hot', value: RunnerType.HOT }, { label: 'Cold 2-Plate', value: RunnerType.COLD_2_PLATE }, { label: 'Cold 3-Plate', value: RunnerType.COLD_3_PLATE }]} />
+          
+          {/* Intermediate Production Calculations */}
+          {result && (
+            <>
+              <InputField label="Optimal Cavities" value={result.numCavities} isCalculated />
+              <InputField label="Selected Machine" value={result.selectedMachine?.tonnage ? `${result.selectedMachine.tonnage}T` : 'None'} isCalculated />
+              <InputField label="Cycle Time" value={result.cycleTime.toFixed(1)} isCalculated suffix="sec" />
+              <InputField label="Yield (Net PPH)" value={result.actualPPH.toFixed(0)} isCalculated suffix="parts/hr" />
+              <InputField label="Total Shot Weight" value={result.shotWeight.toFixed(2)} isCalculated suffix="g" />
+              <InputField label="Runner Weight" value={result.runnerWeight.toFixed(2)} isCalculated suffix="g" />
+            </>
+          )}
+        </InputGroup>
+
+        {/* 3. Cost & Commercial Derivation */}
+        <InputGroup title="3. Commercial Derivation & Unit Costs">
+          <InputField label="Resin Price (Input)" value={inputs.resinPriceOverride ?? ''} onChange={(v) => updateInput('resinPriceOverride', v)} type="number" suffix="₹/Kg" />
+          <InputField label="Packaging/Part" value={inputs.packagingCostPerPart ?? ''} onChange={(v) => updateInput('packagingCostPerPart', v)} type="number" suffix="₹" />
+          <InputField label="SGA Rate" value={inputs.sgaRate ?? ''} onChange={(v) => updateInput('sgaRate', v)} type="number" step="0.01" />
+          <InputField label="Profit Margin" value={inputs.profitRate ?? ''} onChange={(v) => updateInput('profitRate', v)} type="number" step="0.01" />
+          
+          {/* Intermediate Cost Calculations */}
+          {result && (
+            <>
+              <InputField label="Material Cost/Unit" value={result.materialCostPerPart.toFixed(2)} isCalculated suffix="₹" />
+              <InputField label="Process Cost/Unit" value={result.processCostPerPart.toFixed(2)} isCalculated suffix="₹" />
+              <InputField label="Machine Cost/Unit" value={result.machineCostPerPart.toFixed(2)} isCalculated suffix="₹" />
+              <InputField label="Labor Cost/Unit" value={result.laborCostPerPart.toFixed(2)} isCalculated suffix="₹" />
+              <InputField label="Auxiliary Cost/Unit" value={result.auxCostPerPart.toFixed(2)} isCalculated suffix="₹" />
+              <InputField label="Overhead Cost/Unit" value={result.sgaCost.toFixed(2)} isCalculated suffix="₹" />
+              <InputField label="Profit/Unit" value={result.profitCost.toFixed(2)} isCalculated suffix="₹" />
+              <InputField label="Total Unit Cost" value={result.totalPartCost.toFixed(2)} isCalculated suffix="₹" highlight />
+            </>
+          )}
+        </InputGroup>
+
+        {/* 4. Purchased Items / Child Parts */}
+        <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 p-8 shadow-sm">
+           <div className="flex items-center justify-between mb-8">
+              <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest flex items-center">
+                 <ShoppingBag className="w-4 h-4 mr-2 text-brand-primary" /> 4. Purchased Components & Child Parts
+              </h3>
+              <button onClick={addPurchasedItem} className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/30 text-brand-primary dark:text-blue-300 rounded-xl font-bold text-xs hover:bg-blue-100 transition-all">
+                <PlusCircle className="w-4 h-4" /> Add Item
               </button>
            </div>
-        </header>
-
-        <main className="flex-1 p-6 lg:p-8 overflow-y-auto">
-           {view.includes('new-estimate') && renderProgressIndicator()}
-           {view === 'dashboard' ? (
-             <div className="space-y-8 animate-fade-in">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <div onClick={() => setView('templates')} className="bg-brand-cardLight dark:bg-brand-cardDark p-8 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 flex flex-col items-center justify-center text-center cursor-pointer hover:border-brand-primary group transition-all">
-                       <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4 group-hover:bg-brand-primary group-hover:text-white">
-                          <BookOpen className="w-6 h-6" />
-                       </div>
-                       <h3 className="font-bold mb-1">Explore Templates</h3>
-                       <p className="text-xs text-slate-500">Standard configurations for faster quoting</p>
-                    </div>
-                    {savedEstimates.slice(0, 2).map(est => (
-                       <div key={est.metadata.projectId} onClick={() => loadEstimate(est)} className="bg-brand-cardLight dark:bg-brand-cardDark p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm cursor-pointer hover:shadow-md transition-all">
-                          <div className="flex justify-between items-start mb-2">
-                             <h3 className="font-bold truncate">{est.metadata.projectName}</h3>
-                             <span className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-500 font-bold uppercase">{est.metadata.status}</span>
+           
+           <div className="space-y-4">
+              {inputs.purchasedItems.length === 0 ? (
+                <div className="text-center py-10 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-2xl">
+                   <p className="text-xs text-slate-400">No purchased components added to this estimation.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {inputs.purchasedItems.map((item) => (
+                    <div key={item.id} className="p-5 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-700 relative group animate-fade-in">
+                       <button onClick={() => removePurchasedItem(item.id)} className="absolute top-2 right-2 p-1 text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100">
+                          <X className="w-4 h-4" />
+                       </button>
+                       <div className="grid grid-cols-1 gap-4">
+                          <input 
+                            className="bg-transparent border-b border-slate-200 dark:border-slate-700 text-sm font-bold focus:border-brand-primary outline-none py-1"
+                            value={item.name}
+                            onChange={(e) => updatePurchasedItem(item.id, 'name', e.target.value)}
+                          />
+                          <div className="flex gap-4">
+                             <div className="flex-1">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase">Price</label>
+                                <input 
+                                  type="number" 
+                                  className="w-full bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-lg p-2 text-xs font-mono"
+                                  value={item.price}
+                                  onChange={(e) => updatePurchasedItem(item.id, 'price', parseFloat(e.target.value) || 0)}
+                                />
+                             </div>
+                             <div className="flex-1">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase">Scrap %</label>
+                                <input 
+                                  type="number" step="0.01"
+                                  className="w-full bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-lg p-2 text-xs font-mono"
+                                  value={item.scrapRate}
+                                  onChange={(e) => updatePurchasedItem(item.id, 'scrapRate', parseFloat(e.target.value) || 0)}
+                                />
+                             </div>
                           </div>
-                          <p className="text-xs text-slate-500 mb-4">{est.metadata.projectId}</p>
-                          <div className="text-xs pt-4 border-t border-slate-100 dark:border-slate-800 text-brand-primary font-bold">Open Workspace →</div>
+                       </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+           </div>
+
+           {result && (
+              <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                 <div className="text-right">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Total Purchased Value</span>
+                    <span className="text-2xl font-black text-brand-primary">₹{result.purchasedItemsCost.toFixed(2)}</span>
+                 </div>
+              </div>
+           )}
+        </div>
+      </div>
+
+      <div className="xl:col-span-4">
+        <div className="sticky top-24">
+           {result ? <ResultsSection result={result} /> : (
+             <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border-2 border-dashed border-slate-200 dark:border-slate-800 p-20 text-center">
+                <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-6"><Info className="w-8 h-8 text-slate-400" /></div>
+                <h3 className="text-slate-800 dark:text-white font-black">Calculation Pending</h3>
+                <p className="text-xs text-slate-500 mt-2">Complete geometry and volume inputs to activate live costing engine.</p>
+             </div>
+           )}
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen flex bg-brand-bgLight dark:bg-brand-bgDark transition-all duration-300">
+      <Sidebar isOpen={isSidebarOpen} toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} onNewEstimate={startNewEstimate} activeView={view} onViewChange={(v) => setView(v as ViewMode)} />
+      <div className={`flex-1 flex flex-col transition-all duration-300 ${isSidebarOpen ? 'ml-64' : 'ml-20'}`}>
+        <header className="h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 sticky top-0 z-30 px-8 flex items-center justify-between">
+           <div className="flex items-center gap-4">
+             <h2 className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-widest">{view.replace('-', ' ')}</h2>
+             <div className="h-4 w-px bg-slate-200 dark:bg-slate-700"></div>
+             <span className="text-[10px] font-mono text-slate-400 bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded-md">EST-PRO_v2.1</span>
+           </div>
+           <div className="flex items-center gap-4">
+             <div className="flex items-center gap-3 px-4 py-1.5 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700">
+                {user.picture ? <img src={user.picture} className="w-6 h-6 rounded-full" /> : <div className="w-6 h-6 rounded-full bg-brand-primary flex items-center justify-center text-[10px] text-white font-bold">{user.name[0]}</div>}
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{user.name}</span>
+                <button onClick={handleLogout} className="text-[10px] font-black text-red-500 uppercase hover:underline">Logout</button>
+             </div>
+             <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2.5 rounded-2xl text-slate-500 bg-slate-50 dark:bg-slate-800 hover:text-brand-primary transition-all">
+               {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+             </button>
+           </div>
+        </header>
+        <main className="flex-1 p-10 overflow-y-auto">
+           {view === 'dashboard' ? (
+              <div className="max-w-6xl mx-auto space-y-12">
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    <div onClick={startNewEstimate} className="bg-white dark:bg-slate-900 p-10 rounded-[2rem] border-2 border-dashed border-slate-200 dark:border-slate-800 flex flex-col items-center justify-center text-center cursor-pointer group hover:border-brand-primary transition-all">
+                       <Plus className="w-8 h-8 text-brand-primary mb-6" />
+                       <h3 className="text-lg font-black text-slate-800 dark:text-white">New Calculation</h3>
+                       <p className="text-xs text-slate-400 mt-2">Zeroed workspace for new project</p>
+                    </div>
+                    {savedEstimates.slice(0, 5).map(est => (
+                       <div key={est.metadata.projectId} onClick={() => loadEstimate(est)} className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-2xl cursor-pointer group">
+                          <h3 className="text-lg font-black text-slate-800 dark:text-white truncate">{est.metadata.projectName}</h3>
+                          <p className="text-[10px] font-mono text-slate-400 mt-1">{est.metadata.projectId}</p>
+                          <div className="mt-8 flex items-center justify-between border-t pt-6">
+                             <span className="text-xl font-black text-brand-primary">₹{est.result?.totalPartCost.toFixed(2) || '0.00'}</span>
+                             <ArrowRight className="w-5 h-5 opacity-0 group-hover:opacity-100 group-hover:translate-x-2 transition-all" />
+                          </div>
                        </div>
                     ))}
+                 </div>
+              </div>
+           ) : view === 'new-estimate-step1' ? (
+             <div className="max-w-xl mx-auto bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-2xl p-12">
+                <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Project Context</h1>
+                <p className="text-slate-500 mt-2 mb-10">Set metadata before entering workspace.</p>
+                <div className="space-y-6">
+                  <InputField label="Project Name" value={metadata.projectName} onChange={(v) => updateMetadata('projectName', v)} />
+                  <InputField label="Customer" value={metadata.customerName} onChange={(v) => updateMetadata('customerName', v)} />
                 </div>
-                
-                {/* Dashboard Stats */}
-                <div className="bg-white dark:bg-slate-900 rounded-3xl p-8 border border-slate-200 dark:border-slate-800">
-                   <h3 className="text-lg font-bold mb-6">Portfolio Summary</h3>
-                   <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-                      <div>
-                        <p className="text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Total Value</p>
-                        <p className="text-2xl font-black text-slate-800 dark:text-white">{formatCurrency(kpis.value)}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Finalized</p>
-                        <p className="text-2xl font-black text-green-600">{kpis.finalized}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Drafts</p>
-                        <p className="text-2xl font-black text-amber-500">{kpis.drafts}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-400 uppercase font-bold tracking-widest mb-1">Conversion Rate</p>
-                        <p className="text-2xl font-black text-slate-800 dark:text-white">{kpis.total > 0 ? ((kpis.finalized / kpis.total) * 100).toFixed(0) : 0}%</p>
-                      </div>
-                   </div>
-                </div>
+                <button onClick={() => setView('new-estimate-workspace')} disabled={!metadata.projectName} className="w-full mt-10 py-5 bg-brand-primary text-white rounded-2xl font-black shadow-xl shadow-blue-500/30 hover:scale-[1.02] transition-all disabled:opacity-50">Enter Workspace</button>
              </div>
-           ) : renderView()}
+           ) : view === 'new-estimate-workspace' ? renderWorkspace() : view === 'estimates' ? (
+              <div className="max-w-6xl mx-auto space-y-8">
+                 <h1 className="text-3xl font-black text-slate-800 dark:text-white">Estimates Library</h1>
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {savedEstimates.length === 0 ? <p className="text-slate-400 italic">No saved estimates yet.</p> : savedEstimates.map(est => (
+                       <div key={est.metadata.projectId} onClick={() => loadEstimate(est)} className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-2xl cursor-pointer">
+                          <div className="flex justify-between items-start mb-4">
+                             <span className="text-[9px] font-black uppercase bg-green-100 text-green-700 px-2 py-1 rounded-md">{est.metadata.status}</span>
+                             <span className="text-[10px] text-slate-400">{est.updatedAt}</span>
+                          </div>
+                          <h3 className="font-black text-slate-800 dark:text-white">{est.metadata.projectName}</h3>
+                          <p className="text-xs text-slate-500 mt-1">{est.metadata.customerName}</p>
+                          <div className="mt-6 flex justify-between items-center">
+                             <span className="text-xl font-bold">₹{est.result?.totalPartCost.toFixed(2)}</span>
+                          </div>
+                       </div>
+                    ))}
+                 </div>
+              </div>
+           ) : view === 'reports' ? (
+             result && <ReportsSection metadata={metadata} inputs={inputs} result={result} onExportPDF={handleExportPDF} onExportExcel={() => {}} />
+           ) : null}
         </main>
       </div>
     </div>
   );
 }
-
-const formatCurrency = (val: number) => 
-  new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }).format(val);
