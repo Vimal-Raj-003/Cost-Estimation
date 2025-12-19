@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Calculator, Plus, Trash2, Sun, Moon, Download, FileText } from 'lucide-react';
+import { Calculator, Plus, Trash2, Sun, Moon, Download, FileText, Loader2 } from 'lucide-react';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 import { UserInputs, CalculationResult, ShapeType, RunnerType } from './types';
 import { MATERIALS } from './constants';
 import { InputField, InputGroup } from './components/InputSection';
@@ -42,6 +44,7 @@ export default function App() {
   const [result, setResult] = useState<CalculationResult | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
 
   // Dark Mode Toggle Effect
   useEffect(() => {
@@ -147,6 +150,59 @@ export default function App() {
     document.body.removeChild(link);
   };
 
+  const handleExportPDF = async () => {
+    const input = document.getElementById('pdf-capture-root');
+    if (!input) return;
+
+    setIsExportingPDF(true);
+
+    try {
+      // Small delay to allow UI to update (spinner)
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const canvas = await html2canvas(input, {
+        scale: 2, // Retain high quality
+        useCORS: true,
+        backgroundColor: isDarkMode ? '#0F172A' : '#F4F6F9',
+        logging: false
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      
+      // Initialize PDF (A4 Portrait)
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      
+      const imgProps = pdf.getImageProperties(imgData);
+      const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // First Page
+      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+      heightLeft -= pdfHeight;
+
+      // Subsequent Pages
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        // Draw the image shifted upwards to show the next section
+        // Note: position starts negative to shift the image up
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, -1 * (imgHeight - heightLeft), pdfWidth, imgHeight);
+        heightLeft -= pdfHeight;
+      }
+
+      pdf.save(`Estimate_${new Date().toISOString().slice(0,10)}.pdf`);
+    } catch (error) {
+      console.error("PDF generation failed:", error);
+      alert("Failed to generate PDF. Please try again.");
+    } finally {
+      setIsExportingPDF(false);
+    }
+  };
+
   // Find selected material to display its properties (kept for internal logic if needed)
   const selectedMaterial = MATERIALS.find(m => m.code === inputs.materialCode);
 
@@ -168,8 +224,13 @@ export default function App() {
 
            <div className="flex items-center space-x-4">
               <div className="hidden md:flex items-center space-x-2">
-                 <button className="flex items-center px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors">
-                   <FileText className="w-4 h-4 mr-2" /> Export PDF
+                 <button 
+                   onClick={handleExportPDF}
+                   disabled={isExportingPDF}
+                   className="flex items-center px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors disabled:opacity-50"
+                 >
+                   {isExportingPDF ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
+                   {isExportingPDF ? 'Exporting...' : 'Export PDF'}
                  </button>
                  <button 
                     onClick={handleExportExcel}
@@ -195,7 +256,7 @@ export default function App() {
 
         {/* Content Scroll Area */}
         <main className="flex-1 p-6 lg:p-8 overflow-y-auto">
-           <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
+           <div id="pdf-capture-root" className="grid grid-cols-1 xl:grid-cols-12 gap-8">
              
              {/* Left Column: Inputs */}
              <div className="xl:col-span-5 space-y-6 animate-slide-up">
