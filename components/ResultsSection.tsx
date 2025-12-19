@@ -170,13 +170,19 @@ export const ResultsSection: React.FC<ResultsSectionProps> = ({ result }) => {
                       paddingAngle={4}
                       dataKey="value"
                       stroke="none"
+                      label={({ percent }) => `${(percent * 100).toFixed(1)}%`}
+                      labelLine={{ stroke: '#94a3b8', strokeWidth: 1 }}
                     >
                       {chartData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
                     <Tooltip 
-                      formatter={(val: number) => formatCurrency(val)} 
+                      formatter={(val: number, name: string, props: any) => {
+                         const total = chartData.reduce((acc, cur) => acc + cur.value, 0);
+                         const percent = ((val / total) * 100).toFixed(1);
+                         return [`${formatCurrency(val)} (${percent}%)`, name];
+                      }}
                       contentStyle={{ backgroundColor: '#1E293B', borderColor: '#334155', color: '#F8FAFC', borderRadius: '8px', fontSize: '12px' }}
                       itemStyle={{ color: '#F8FAFC' }}
                     />
