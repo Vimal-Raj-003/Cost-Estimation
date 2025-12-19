@@ -1,0 +1,5 @@
+{
+  "name": "InjectionMoldingEstimator",
+  "description": "A professional, interactive cost estimation tool for injection molding processes. Calculates material, process, and overhead costs based on part geometry, material selection, and production requirements using industry-standard formulas and lookup tables.",
+  "requestFramePermissions": []
+}
