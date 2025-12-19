@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Plus, Trash2, Sun, Moon, Download, FileText, ArrowRight, 
@@ -320,9 +319,22 @@ export default function App() {
     const res = calculateCosts(inputs);
     setResult(res);
     
-    // Only update status to Final if requested, otherwise keep current
+    // Only update status to Final if requested, otherwise keep current status (Draft or Final)
     const newStatus: ProjectStatus = isFinal ? 'Final' : metadata.status;
-    const updatedMetadata = { ...metadata, status: newStatus };
+    
+    // Versioning Implementation:
+    // If we have currentDbId, it means this is a subsequent save.
+    let nextVersion = metadata.version;
+    if (currentDbId) {
+       nextVersion += 1;
+    }
+    
+    const updatedMetadata = { 
+      ...metadata, 
+      status: newStatus, 
+      version: nextVersion 
+    };
+    
     setMetadata(updatedMetadata);
 
     const payload = {
@@ -357,7 +369,7 @@ export default function App() {
       setSavedEstimates(updatedEstimates);
       localStorage.setItem('estimatepro_guest_data', JSON.stringify(updatedEstimates));
       setIsSaving(false);
-      alert(isFinal ? "Project Finalized and saved locally!" : "Project Draft saved locally!");
+      alert(isFinal ? `Project Finalized as V${nextVersion}!` : `Draft saved as V${nextVersion}!`);
       return;
     }
 
@@ -378,6 +390,7 @@ export default function App() {
         const { data: insertData, error: insertError } = await supabase
           .from('estimates')
           .insert([dbPayload])
+          .select()
           .single();
         if (insertData) setCurrentDbId(insertData.id);
         error = insertError;
@@ -386,7 +399,7 @@ export default function App() {
       if (error) throw error;
 
       setIsSaving(false);
-      alert(isFinal ? "Project Finalized and saved to Database!" : "Project Draft saved to Database!");
+      alert(isFinal ? `Project Finalized as V${nextVersion}!` : `Draft saved as V${nextVersion}!`);
       fetchEstimates(user.id); // Refresh list
     } catch (err: any) {
       console.error('Error saving:', err);
@@ -453,7 +466,7 @@ export default function App() {
         // Text
         const dateStr = new Date().toLocaleDateString();
         pdf.text(`Generated: ${dateStr}`, margin, pdfHeight - margin);
-        pdf.text(`${metadata.projectName} | ${metadata.projectId}`, pdfWidth / 2, pdfHeight - margin, { align: 'center' });
+        pdf.text(`${metadata.projectName} | ${metadata.projectId} | V${metadata.version}`, pdfWidth / 2, pdfHeight - margin, { align: 'center' });
         pdf.text(`Page ${pageNum}`, pdfWidth - margin, pdfHeight - margin, { align: 'right' });
       };
 
@@ -482,7 +495,7 @@ export default function App() {
         heightLeft -= contentHeight;
       }
 
-      pdf.save(`Estimation_Report_${metadata.projectId}.pdf`);
+      pdf.save(`Estimation_Report_${metadata.projectId}_V${metadata.version}.pdf`);
 
     } catch (err) {
       console.error(err);
@@ -503,6 +516,7 @@ export default function App() {
       ["Project Information"],
       ["Project ID", metadata.projectId],
       ["Project Name", metadata.projectName],
+      ["Version", `V${metadata.version}`],
       ["Customer", metadata.customerName],
       ["Date", metadata.createdDate],
       ["Status", metadata.status],
@@ -566,13 +580,13 @@ export default function App() {
       [],
       ["Overheads"],
       ["Packaging & Logistics", result.packagingCost],
-      ["SG&A (10%)", result.sgaRate],
+      ["SG&A (10%)", result.sgaCost],
       ["Net Overheads", result.packagingCost + result.sgaCost],
     ];
 
     // 4. Analysis Sheet (Volume Sensitivity)
     const analysisVolumes = [10000, 25000, 50000, 100000, 250000, 500000, 1000000];
-    const volumeAnalysisRows = [["Annual Volume", "Unit Cost (INR)", "Total Value (INR)"]];
+    const volumeAnalysisRows: (string | number)[][] = [["Annual Volume", "Unit Cost (INR)", "Total Value (INR)"]];
     analysisVolumes.forEach(v => {
       const res = calculateCosts({ ...inputs, annualVolume: v });
       volumeAnalysisRows.push([v, res.totalPartCost, res.totalPartCost * v]);
@@ -585,7 +599,7 @@ export default function App() {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(breakdownData), "Cost Breakdown");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(volumeAnalysisRows), "Volume Sensitivity");
 
-    XLSX.writeFile(wb, `Estimation_Report_${metadata.projectId}.xlsx`);
+    XLSX.writeFile(wb, `Estimation_Report_${metadata.projectId}_V${metadata.version}.xlsx`);
   };
 
   if (authLoading) {
@@ -605,9 +619,19 @@ export default function App() {
       {/* Input width to 5 columns */}
       <div className="xl:col-span-5 space-y-6 pb-32">
         <div className="flex items-center justify-between bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-sm">
-           <div>
-              <h1 className="text-xl font-black text-slate-800 dark:text-white tracking-tight">{metadata.projectName || 'Estimation Workspace'}</h1>
-              <p className="text-xs text-slate-400 mt-1 font-medium">{metadata.projectId}</p>
+           <div className="flex flex-col">
+              <div className="flex items-center gap-2 mb-1">
+                 <h1 className="text-xl font-black text-slate-800 dark:text-white tracking-tight">{metadata.projectName || 'Estimation Workspace'}</h1>
+                 <div className="flex items-center gap-1.5">
+                    <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/40 text-brand-primary dark:text-blue-300 rounded text-[10px] font-black uppercase tracking-widest">
+                       V{metadata.version}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-widest ${metadata.status === 'Final' ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
+                       {metadata.status}
+                    </span>
+                 </div>
+              </div>
+              <p className="text-xs text-slate-400 font-medium">{metadata.projectId}</p>
            </div>
            <div className="flex items-center gap-2">
               <button 
@@ -618,7 +642,7 @@ export default function App() {
                 {isSaving ? (
                   <div className="w-4 h-4 border-2 border-brand-primary/30 border-t-brand-primary rounded-full animate-spin"></div>
                 ) : (
-                  <><Save className="w-4 h-4 mr-2" /> Save Project</>
+                  <><Save className="w-4 h-4 mr-2" /> Save Draft</>
                 )}
               </button>
               <button 
@@ -653,9 +677,10 @@ export default function App() {
 
         {/* 2. Production & Machine Metrics */}
         <InputGroup title="2. Production & Machine">
-          <InputField label="Material" value={String(inputs.materialCode)} onChange={(v) => handleMaterialChange(v)} type="select" options={MATERIALS.map(m => ({ label: m.name, value: m.code }))} />
+          <InputField label="Material" value={String(inputs.materialCode)} onChange={(v) => handleMaterialChange(v)} type="select" options={MATERIALS.map(m => ({ label: m.name, value: String(m.code) }))} />
           <InputField label="Annual Volume" value={String(inputs.annualVolume ?? '')} onChange={(v) => updateInput('annualVolume', v)} type="number" suffix="units" />
-          <InputField label="Runner System" value={String(inputs.runnerType)} onChange={(v) => updateInput('runnerType', v)} type="select" options={[{ label: 'Hot', value: RunnerType.HOT }, { label: 'Cold 2-Plate', value: RunnerType.COLD_2_PLATE }, { label: 'Cold 3-Plate', value: RunnerType.COLD_3_PLATE }]} />
+          {/* Explicitly stringify RunnerType values in options to satisfy compiler checks on line 578 when strict string typing is enforced */}
+          <InputField label="Runner System" value={String(inputs.runnerType)} onChange={(v) => updateInput('runnerType', v)} type="select" options={[{ label: 'Hot', value: String(RunnerType.HOT) }, { label: 'Cold 2-Plate', value: String(RunnerType.COLD_2_PLATE) }, { label: 'Cold 3-Plate', value: String(RunnerType.COLD_3_PLATE) }]} />
           
           {/* Intermediate Production Calculations */}
           {result && (
@@ -792,7 +817,10 @@ export default function App() {
                     {savedEstimates.slice(0, 5).map(est => (
                        <div key={est.metadata.projectId} onClick={() => loadEstimate(est)} className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-2xl cursor-pointer group">
                           <h3 className="text-lg font-black text-slate-800 dark:text-white truncate">{est.metadata.projectName}</h3>
-                          <p className="text-[10px] font-mono text-slate-400 mt-1">{est.metadata.projectId}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                             <span className="text-[8px] font-black uppercase bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">V{est.metadata.version}</span>
+                             <p className="text-[10px] font-mono text-slate-400">{est.metadata.projectId}</p>
+                          </div>
                           <div className="mt-8 flex items-center justify-between border-t pt-6">
                              <span className="text-xl font-black text-brand-primary">₹{est.result?.totalPartCost.toFixed(2) || '0.00'}</span>
                              <ArrowRight className="w-5 h-5 opacity-0 group-hover:opacity-100 group-hover:translate-x-2 transition-all" />
@@ -818,7 +846,10 @@ export default function App() {
                     {savedEstimates.length === 0 ? <p className="text-slate-400 italic">No saved estimates yet.</p> : savedEstimates.map(est => (
                        <div key={est.metadata.projectId} onClick={() => loadEstimate(est)} className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-2xl cursor-pointer">
                           <div className="flex justify-between items-start mb-4">
-                             <span className="text-[9px] font-black uppercase bg-green-100 text-green-700 px-2 py-1 rounded-md">{est.metadata.status}</span>
+                             <div className="flex gap-1.5">
+                                <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-md ${est.metadata.status === 'Final' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>{est.metadata.status}</span>
+                                <span className="text-[9px] font-black uppercase bg-blue-50 text-blue-600 px-2 py-1 rounded-md">V{est.metadata.version}</span>
+                             </div>
                              <span className="text-[10px] text-slate-400">{est.updatedAt}</span>
                           </div>
                           <h3 className="font-black text-slate-800 dark:text-white">{est.metadata.projectName}</h3>

@@ -18,26 +18,27 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
-  const currentOrigin = window.location.origin;
-
   const handleGoogleLogin = async () => {
     setLoading(true);
     try {
+      // In sandbox environments, window.location.origin is usually sufficient,
+      // but explicitly stripping any trailing slashes or query params can prevent 403 mismatches.
+      const redirectUrl = window.location.href.split('?')[0].replace(/\/$/, "");
+      
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: currentOrigin, 
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          },
+          redirectTo: redirectUrl,
+          // Removed specific access_type and prompt to avoid stricter Google validation 
+          // which can cause 403 errors in some iframe/sandbox contexts
         },
       });
       if (error) throw error;
     } catch (error: any) {
+      console.error("Auth error:", error);
       setMessage({ 
         type: 'error', 
-        text: `Google Auth Error: ${error.message}. Please check your connection or try another method.` 
+        text: `Authentication Error: ${error.message || 'Access Denied'}. Please try using Guest Mode or Email sign-in.` 
       });
       setLoading(false);
     }
@@ -53,12 +54,15 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     setMessage(null);
 
     try {
+      const redirectUrl = window.location.href.split('?')[0].replace(/\/$/, "");
+      
       if (mode === 'signup') {
         const { error } = await supabase.auth.signUp({
           email,
           password,
           options: {
             data: { full_name: name },
+            emailRedirectTo: redirectUrl,
           },
         });
         if (error) throw error;
@@ -68,7 +72,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       } else if (mode === 'reset') {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: currentOrigin });
+        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: redirectUrl });
         if (error) throw error;
         setMessage({ type: 'success', text: 'Password reset link sent to your email.' });
         setLoading(false);
