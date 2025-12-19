@@ -1,7 +1,11 @@
 export interface Material {
   code: string;
   name: string;
+  family?: string; // Added
+  remarks?: string; // Added
   density: number; // g/cm3
+  
+  // Calculation factors (Ranges kept for compatibility, but will store single values if provided)
   cf_min: number; // clamp factor
   cf_max: number;
   k_cool_min: number;
@@ -10,10 +14,12 @@ export interface Material {
   k_pack_max: number;
   t_fill_min: number;
   t_fill_max: number;
+  
   regrind: number; // % (e.g. 30 for 30%)
   
-  // Pricing (added to merge logic)
+  // Pricing
   priceResin: number; // INR per kg
+  priceUSD?: number; // Added
   priceScrap: number; // INR per kg
 }
 

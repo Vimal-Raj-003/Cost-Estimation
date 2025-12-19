@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Calculator, Plus, Trash2, Sun, Moon, Download, FileText, User } from 'lucide-react';
+import { Calculator, Plus, Trash2, Sun, Moon, Download, FileText } from 'lucide-react';
 import { UserInputs, CalculationResult, ShapeType, RunnerType } from './types';
 import { MATERIALS } from './constants';
 import { InputField, InputGroup } from './components/InputSection';
@@ -30,7 +30,7 @@ const INITIAL_INPUTS: UserInputs = {
   laborOverhead: 0.3,
   useRobot: false,
   useConveyor: false,
-  resinPriceOverride: 0,
+  resinPriceOverride: 105, // Default price for PP_HOMO
   packagingCostPerPart: 0.50,
   sgaRate: 0.1,
   profitRate: 0.15,
@@ -68,6 +68,15 @@ export default function App() {
     }));
   };
 
+  const handleMaterialChange = (newCode: string) => {
+    const selectedMat = MATERIALS.find(m => m.code === newCode);
+    setInputs(prev => ({
+      ...prev,
+      materialCode: newCode,
+      resinPriceOverride: selectedMat ? selectedMat.priceResin : prev.resinPriceOverride
+    }));
+  };
+
   const addPurchasedItem = () => {
     setInputs(prev => ({
       ...prev,
@@ -91,6 +100,56 @@ export default function App() {
     }));
   };
 
+  const handleExportExcel = () => {
+    if (!result) return;
+
+    // Helper to escape CSV values
+    const esc = (val: string | number) => `"${String(val).replace(/"/g, '""')}"`;
+
+    const rows = [
+      ['Category', 'Parameter', 'Value', 'Unit'],
+      ['Project', 'Reference', 'Estimate #0042', ''],
+      ['Project', 'Date', new Date().toLocaleDateString(), ''],
+      [],
+      ['Inputs', 'Material', inputs.materialCode, ''],
+      ['Inputs', 'Geometry (LxWxH)', `${inputs.length}x${inputs.width}x${inputs.height}`, 'mm'],
+      ['Inputs', 'Wall Thickness', inputs.wallThickness, 'mm'],
+      ['Inputs', 'Part Weight', result.netWeight.toFixed(2), 'g'],
+      ['Inputs', 'Annual Volume', inputs.annualVolume, 'parts'],
+      ['Inputs', 'Working Days', inputs.workingDays, 'days'],
+      ['Inputs', 'Shifts', inputs.shiftsPerDay, ''],
+      [],
+      ['Technical', 'Calculated Cycle Time', result.cycleTime.toFixed(2), 's'],
+      ['Technical', 'Required Tonnage', result.requiredTonnage.toFixed(1), 'T'],
+      ['Technical', 'Selected Machine', result.selectedMachine ? `${result.selectedMachine.tonnage}T` : 'N/A', ''],
+      ['Technical', 'Cavities', result.numCavities, ''],
+      ['Technical', 'Actual PPH', result.actualPPH.toFixed(0), 'parts/hr'],
+      [],
+      ['Cost Breakdown', 'Material Cost', result.materialCostPerPart.toFixed(4), 'INR'],
+      ['Cost Breakdown', 'Process Cost', result.processCostPerPart.toFixed(4), 'INR'],
+      ['Cost Breakdown', 'Packaging', result.packagingCost.toFixed(4), 'INR'],
+      ['Cost Breakdown', 'SG&A', result.sgaCost.toFixed(4), 'INR'],
+      ['Cost Breakdown', 'Profit', result.profitCost.toFixed(4), 'INR'],
+      ['Cost Breakdown', 'Purchased Items', result.purchasedItemsCost.toFixed(4), 'INR'],
+      [],
+      ['Total', 'Final Part Cost', result.totalPartCost.toFixed(4), 'INR'],
+    ];
+
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + rows.map(e => e.map(esc).join(",")).join("\n");
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Estimate_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Find selected material to display its properties (kept for internal logic if needed)
+  const selectedMaterial = MATERIALS.find(m => m.code === inputs.materialCode);
+
   return (
     <div className="min-h-screen flex bg-brand-bgLight dark:bg-brand-bgDark text-slate-900 dark:text-slate-100 font-sans transition-colors duration-200">
       
@@ -112,7 +171,10 @@ export default function App() {
                  <button className="flex items-center px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors">
                    <FileText className="w-4 h-4 mr-2" /> Export PDF
                  </button>
-                 <button className="flex items-center px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors">
+                 <button 
+                    onClick={handleExportExcel}
+                    className="flex items-center px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors"
+                 >
                    <Download className="w-4 h-4 mr-2" /> Export Excel
                  </button>
               </div>
@@ -161,7 +223,7 @@ export default function App() {
                   <InputField 
                     label="Material" 
                     value={inputs.materialCode} 
-                    onChange={(v) => updateInput('materialCode', v)} 
+                    onChange={(v) => handleMaterialChange(v)} 
                     type="select" 
                     options={MATERIALS.map(m => ({ label: m.name, value: m.code }))} 
                   />
@@ -178,7 +240,7 @@ export default function App() {
                     ]}
                   />
                   <InputField label="Glass Filled" value={inputs.isGlassFilled ? 1 : 0} onChange={(v) => updateInput('isGlassFilled', v)} type="checkbox" />
-                  <InputField label="Resin Cost (₹/kg)" value={inputs.resinPriceOverride} onChange={(v) => updateInput('resinPriceOverride', v)} type="number" suffix="override" />
+                  <InputField label="Resin Cost (INR/kg)" value={inputs.resinPriceOverride} onChange={(v) => updateInput('resinPriceOverride', v)} type="number" />
                 </InputGroup>
 
                 <InputGroup title="3. Production Data">
@@ -192,10 +254,10 @@ export default function App() {
 
                 <InputGroup title="4. Process & Overhead">
                   <InputField label="Operators" value={inputs.numOperators} onChange={(v) => updateInput('numOperators', v)} type="number" step="0.5" />
-                  <InputField label="Labor Rate (₹/hr)" value={inputs.operatorRate} onChange={(v) => updateInput('operatorRate', v)} type="number" />
+                  <InputField label="Labor Rate (INR/hr)" value={inputs.operatorRate} onChange={(v) => updateInput('operatorRate', v)} type="number" />
                   <InputField label="SG&A Rate" value={inputs.sgaRate} onChange={(v) => updateInput('sgaRate', v)} type="number" step="0.01" />
                   <InputField label="Profit Margin" value={inputs.profitRate} onChange={(v) => updateInput('profitRate', v)} type="number" step="0.01" />
-                  <InputField label="Packaging (₹)" value={inputs.packagingCostPerPart} onChange={(v) => updateInput('packagingCostPerPart', v)} type="number" />
+                  <InputField label="Packaging (INR)" value={inputs.packagingCostPerPart} onChange={(v) => updateInput('packagingCostPerPart', v)} type="number" />
                   <InputField label="Robot" value={inputs.useRobot ? 1 : 0} onChange={(v) => updateInput('useRobot', v)} type="checkbox" />
                   <InputField label="Conveyor" value={inputs.useConveyor ? 1 : 0} onChange={(v) => updateInput('useConveyor', v)} type="checkbox" />
                 </InputGroup>
