@@ -1,4 +1,4 @@
-import { Machine, Material, RunnerType } from './types';
+import { Machine, Material, RunnerType, Template, ShapeType } from './types';
 
 export const MATERIALS: Material[] = [
   { code: 'PP_HOMO', name: 'Polypropylene Homopolymer', family: 'PP', density: 0.90, cf_min: 0.28, cf_max: 0.28, k_cool_min: 2.1, k_cool_max: 2.1, k_pack_min: 0.25, k_pack_max: 0.25, t_fill_min: 0.9, t_fill_max: 0.9, regrind: 30, priceResin: 105, priceUSD: 1.30, priceScrap: 15, remarks: 'General purpose, automotive interiors' },
@@ -73,3 +73,52 @@ export const SHAPE_FACTORS = {
   ROUND: 0.70,
   COMPLEX: 0.65,
 };
+
+const BASE_INPUTS = {
+  length: 100, width: 50, height: 20, wallThickness: 2, projectedArea: null,
+  shapeType: ShapeType.RECTANGLE, volume: null, weight: null, annualVolume: 100000,
+  workingDays: 250, shiftsPerDay: 2, hoursPerShift: 8, oee: 0.85, scrapRate: 0.02,
+  materialCode: 'PP_HOMO', isGlassFilled: false, runnerType: RunnerType.COLD_2_PLATE,
+  numOperators: 1, operatorRate: 150, laborOverhead: 0.3, useRobot: false, useConveyor: false,
+  resinPriceOverride: 105, packagingCostPerPart: 0.50, sgaRate: 0.1, profitRate: 0.15,
+  purchasedItems: [],
+};
+
+export const DEFAULT_TEMPLATES: Template[] = [
+  {
+    id: 'tmpl_precision_single',
+    name: 'Precision Single Cavity',
+    description: 'Optimized for engineering parts with tight tolerances and complex geometries.',
+    type: 'Injection Molding',
+    volumeProfile: 'Low',
+    lastUpdated: '05/01/2025',
+    inputs: { ...BASE_INPUTS, annualVolume: 10000, runnerType: RunnerType.COLD_2_PLATE, materialCode: 'PC', resinPriceOverride: 320, oee: 0.70 }
+  },
+  {
+    id: 'tmpl_high_volume_multi',
+    name: 'High Volume Multi-Cavity',
+    description: 'Fast cycle times using hot runners and multi-cavity tooling for consumer goods.',
+    type: 'Injection Molding',
+    volumeProfile: 'High',
+    lastUpdated: '05/01/2025',
+    inputs: { ...BASE_INPUTS, annualVolume: 2000000, runnerType: RunnerType.HOT, useRobot: true, useConveyor: true, oee: 0.90, numOperators: 0.5 }
+  },
+  {
+    id: 'tmpl_auto_exterior',
+    name: 'Automotive Exterior (ABS)',
+    description: 'Standard settings for automotive housings, grills, and mirror caps.',
+    type: 'Injection Molding',
+    volumeProfile: 'Medium',
+    lastUpdated: '05/02/2025',
+    inputs: { ...BASE_INPUTS, materialCode: 'ABS', annualVolume: 150000, scrapRate: 0.04, packagingCostPerPart: 1.20 }
+  },
+  {
+    id: 'tmpl_fast_consumer',
+    name: 'Disposable Goods (PP)',
+    description: 'Extreme efficiency for thin-walled, low-cost commodity items.',
+    type: 'Injection Molding',
+    volumeProfile: 'High',
+    lastUpdated: '05/02/2025',
+    inputs: { ...BASE_INPUTS, materialCode: 'PP_HOMO', annualVolume: 5000000, wallThickness: 0.8, oee: 0.95, profitRate: 0.08 }
+  }
+];

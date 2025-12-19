@@ -1,12 +1,35 @@
+export type ProjectStatus = 'Draft' | 'Final' | 'Sold' | 'Archived';
+
+export interface ProjectMetadata {
+  projectId: string;
+  projectName: string;
+  customerName: string;
+  partName: string;
+  estimationType: 'Injection Molding' | 'Sheet Metal' | 'Assembly';
+  createdBy: string;
+  createdDate: string;
+  status: ProjectStatus;
+  version: number;
+}
+
+export interface Template {
+  id: string;
+  name: string;
+  description: string;
+  type: 'Injection Molding' | 'Sheet Metal' | 'Assembly';
+  volumeProfile: 'Low' | 'Medium' | 'High';
+  inputs: UserInputs;
+  isCustom?: boolean;
+  lastUpdated: string;
+}
+
 export interface Material {
   code: string;
   name: string;
-  family?: string; // Added
-  remarks?: string; // Added
-  density: number; // g/cm3
-  
-  // Calculation factors (Ranges kept for compatibility, but will store single values if provided)
-  cf_min: number; // clamp factor
+  family?: string;
+  remarks?: string;
+  density: number;
+  cf_min: number;
   cf_max: number;
   k_cool_min: number;
   k_cool_max: number;
@@ -14,22 +37,19 @@ export interface Material {
   k_pack_max: number;
   t_fill_min: number;
   t_fill_max: number;
-  
-  regrind: number; // % (e.g. 30 for 30%)
-  
-  // Pricing
-  priceResin: number; // INR per kg
-  priceUSD?: number; // Added
-  priceScrap: number; // INR per kg
+  regrind: number;
+  priceResin: number;
+  priceUSD?: number;
+  priceScrap: number;
 }
 
 export interface Machine {
   tonnage: number;
-  max_shot: number; // g (Polystyrene equivalent)
-  t_open_close: number; // s
-  t_eject: number; // s
-  power: number; // kW
-  mhr_inr: number; // Cost per hour INR
+  max_shot: number;
+  t_open_close: number;
+  t_eject: number;
+  power: number;
+  mhr_inr: number;
 }
 
 export enum ShapeType {
@@ -49,11 +69,10 @@ export interface PurchasedItem {
   id: string;
   name: string;
   price: number;
-  scrapRate: number; // 0-1
+  scrapRate: number;
 }
 
 export interface UserInputs {
-  // Geometry
   length: number;
   width: number;
   height: number;
@@ -62,92 +81,56 @@ export interface UserInputs {
   shapeType: ShapeType;
   volume: number | null;
   weight: number | null;
-  
-  // Production
   annualVolume: number;
   workingDays: number;
   shiftsPerDay: number;
   hoursPerShift: number;
-  oee: number; // 0-1
-  scrapRate: number; // 0-1
-  
-  // Material & Tool
+  oee: number;
+  scrapRate: number;
   materialCode: string;
   isGlassFilled: boolean;
   runnerType: RunnerType;
-  
-  // Process Details (Labor/Overhead)
   numOperators: number;
   operatorRate: number;
-  laborOverhead: number; // Percentage (0.2 = 20%)
-  
-  // Auxiliaries
+  laborOverhead: number;
   useRobot: boolean;
   useConveyor: boolean;
-  
-  // Costs
   resinPriceOverride: number;
-  
-  // Overheads
   packagingCostPerPart: number;
   sgaRate: number;
   profitRate: number;
-
   purchasedItems: PurchasedItem[];
 }
 
 export interface CalculationResult {
-  // Block 2
   netWeight: number;
   volumeMm3: number;
-  
-  // Block 3
   projectedAreaCm2: number;
-  
-  // Block 4 & 6 & 8
   requiredTonnage: number;
   selectedMachine: Machine | null;
   numCavities: number;
-  
-  // Block 5
   availableHours: number;
   requiredPPH: number;
-  
-  // Block 7
   runnerWeight: number;
   shotWeight: number;
   paidShotWeight: number;
-  
-  // Block 9
   cycleTime: number;
   tCool: number;
   tFill: number;
   tPack: number;
   tMachine: number;
-  
-  // Block 10
   actualPPH: number;
-  
-  // Block 11 (Material Cost)
   materialCostPerPart: number;
   resinCost: number;
   scrapCredit: number;
-  
-  // Block 12 (Process Cost)
   processCostPerPart: number;
   machineCostPerPart: number;
   laborCostPerPart: number;
   auxCostPerPart: number;
-  
-  // Block 13 (Overheads)
   packagingCost: number;
   sgaCost: number;
   profitCost: number;
   purchasedItemsCost: number;
-  
-  // Block 14
   totalPartCost: number;
-  
-  // Messages/Warnings
   warnings: string[];
 }
