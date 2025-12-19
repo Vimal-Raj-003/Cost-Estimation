@@ -54,6 +54,9 @@ export const InputField: React.FC<InputFieldProps> = ({
         : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white cursor-default")
     : "bg-[#EEF2FF] dark:bg-[#1D2A44] border-blue-200/50 dark:border-blue-900/30 text-brand-primary dark:text-blue-100 font-medium focus:ring-2 focus:ring-blue-400/20 focus:border-blue-400/50";
 
+  // Ensure value is handled safely for native input/select elements to prevent "Type 'number' is not assignable to type 'string'" errors in some React environments
+  const displayValue = value === null || value === undefined ? '' : String(value);
+
   return (
     <div className="flex flex-col group animate-fade-in">
       <div className="flex justify-between items-center mb-1.5 px-1">
@@ -74,7 +77,7 @@ export const InputField: React.FC<InputFieldProps> = ({
           <div className="relative">
              <select
               className={`${baseClasses} ${stateClasses}`}
-              value={value}
+              value={displayValue}
               onChange={(e) => onChange?.(e.target.value)}
               disabled={isCalculated}
             >
@@ -106,7 +109,7 @@ export const InputField: React.FC<InputFieldProps> = ({
               step={step}
               readOnly={isCalculated}
               className={`${baseClasses} ${stateClasses}`}
-              value={value}
+              value={displayValue}
               onChange={(e) => onChange?.(e.target.value)}
             />
             {suffix && (

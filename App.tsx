@@ -1,12 +1,13 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Plus, Trash2, Sun, Moon, Download, FileText, ArrowRight, 
   CheckCircle, Save, BookOpen, Layers, Zap, TrendingUp, BarChart,
-  Search, Info, Database, MoreVertical, Package, Clock, ShieldAlert, Users, LayoutDashboard, ChevronRight, Printer, Filter, Copy, ArrowUpDown, Calculator, Lock, PlusCircle, X, ShoppingBag, Beaker, Gauge
+  Search, Info, Database, MoreVertical, Package, Clock, ShieldAlert, Users, LayoutDashboard, ChevronRight, Printer, Filter, Copy, ArrowUpDown, Calculator, Lock, PlusCircle, X, ShoppingBag, Beaker, Gauge, LogOut
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
+import * as XLSX from 'xlsx';
 import { UserInputs, CalculationResult, ShapeType, RunnerType, ProjectMetadata, ProjectStatus, WeightSource, User, PurchasedItem, Template } from './types';
 import { MATERIALS, DEFAULT_TEMPLATES, MACHINES } from './constants';
 import { InputField, InputGroup } from './components/InputSection';
@@ -100,12 +101,17 @@ export default function App() {
   const [isExportingPDF, setIsExportingPDF] = useState(false);
   const [currentDbId, setCurrentDbId] = useState<string | null>(null);
   const [rateCardTab, setRateCardTab] = useState<'materials' | 'machines'>('materials');
+  const [isSaving, setIsSaving] = useState(false);
+  
+  // Track guest mode to prevent Supabase auth listener from clearing state
+  const isGuestMode = useRef(false);
 
   // Auth State Listener
   useEffect(() => {
     const initSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
+        isGuestMode.current = false;
         handleUserSession(session.user);
       }
       setAuthLoading(false);
@@ -114,10 +120,14 @@ export default function App() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
+        isGuestMode.current = false;
         handleUserSession(session.user);
       } else {
-        setUser(null);
-        setSavedEstimates([]);
+        // Only clear user if not in guest mode
+        if (!isGuestMode.current) {
+          setUser(null);
+          setSavedEstimates([]);
+        }
       }
     });
 
@@ -135,8 +145,34 @@ export default function App() {
     fetchEstimates(authUser.id);
   };
 
+  const handleGuestLogin = () => {
+    isGuestMode.current = true;
+    const guestUser: User = {
+      id: 'guest',
+      email: 'guest@estimatepro.demo',
+      name: 'Guest User',
+      role: 'user',
+      picture: undefined
+    };
+    setUser(guestUser);
+    
+    // Load local storage estimates for guest
+    try {
+      const localEst = localStorage.getItem('estimatepro_guest_data');
+      if (localEst) {
+        setSavedEstimates(JSON.parse(localEst));
+      } else {
+        setSavedEstimates([]);
+      }
+    } catch (e) {
+      console.error("Failed to load guest data", e);
+    }
+  };
+
   // Fetch Estimates from Supabase
   const fetchEstimates = async (userId: string) => {
+    if (userId === 'guest') return; // Handled in handleGuestLogin
+    
     try {
       const { data, error } = await supabase
         .from('estimates')
@@ -167,9 +203,15 @@ export default function App() {
   }, [isDarkMode]);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setView('dashboard');
+    if (user?.id === 'guest') {
+      isGuestMode.current = false;
+      setUser(null);
+      setSavedEstimates([]);
+    } else {
+      await supabase.auth.signOut();
+      setUser(null);
+      setView('dashboard');
+    }
   };
 
   const handleRunCalculation = () => {
@@ -211,8 +253,6 @@ export default function App() {
     });
     setInputs({
       ...template.inputs,
-      // Reset dimensions for the template to force user input if needed, 
-      // or keep them as examples. Keeping them is usually better for templates.
     });
     setResult(null);
     setCurrentDbId(null);
@@ -223,7 +263,8 @@ export default function App() {
     setMetadata(prev => ({ ...prev, [key]: value }));
   };
 
-  const updateInput = (key: keyof UserInputs, value: any) => {
+  // Fix: Use generic type K to ensure nextValue matches the expected type of UserInputs[K]
+  const updateInput = <K extends keyof UserInputs>(key: K, value: any) => {
     setInputs(prev => {
       let nextValue = value;
       if (value === '' || value === null || value === undefined) {
@@ -233,7 +274,7 @@ export default function App() {
           nextValue = parseFloat(value);
         }
       }
-      return { ...prev, [key]: nextValue };
+      return { ...prev, [key]: nextValue as UserInputs[K] };
     });
   };
 
@@ -273,40 +314,70 @@ export default function App() {
     }));
   };
 
-  const finalizeProject = async () => {
+  const handleSaveProject = async (isFinal: boolean = false) => {
     if (!user) return;
+    setIsSaving(true);
     const res = calculateCosts(inputs);
     setResult(res);
-    const updatedMetadata = { ...metadata, status: 'Final' as ProjectStatus };
+    
+    // Only update status to Final if requested, otherwise keep current
+    const newStatus: ProjectStatus = isFinal ? 'Final' : metadata.status;
+    const updatedMetadata = { ...metadata, status: newStatus };
     setMetadata(updatedMetadata);
 
-    try {
-      const payload = {
-        user_id: user.id,
-        project_id: updatedMetadata.projectId,
-        project_name: updatedMetadata.projectName,
-        customer_name: updatedMetadata.customerName,
-        status: 'Final',
-        inputs: inputs,
-        result: res,
+    const payload = {
+      project_id: updatedMetadata.projectId,
+      project_name: updatedMetadata.projectName,
+      customer_name: updatedMetadata.customerName,
+      status: newStatus,
+      inputs: inputs,
+      result: res,
+      metadata: updatedMetadata,
+      updated_at: new Date().toISOString()
+    };
+
+    if (user.id === 'guest') {
+      // Guest Mode: Save to LocalStorage
+      const newEstimate: SavedEstimate = {
+        id: currentDbId || `local-${Date.now()}`,
         metadata: updatedMetadata,
-        updated_at: new Date().toISOString()
+        inputs,
+        result: res,
+        updatedAt: new Date().toLocaleString()
       };
+      
+      let updatedEstimates;
+      if (currentDbId) {
+        updatedEstimates = savedEstimates.map(e => e.id === currentDbId ? newEstimate : e);
+      } else {
+        updatedEstimates = [newEstimate, ...savedEstimates];
+        setCurrentDbId(newEstimate.id);
+      }
+      
+      setSavedEstimates(updatedEstimates);
+      localStorage.setItem('estimatepro_guest_data', JSON.stringify(updatedEstimates));
+      setIsSaving(false);
+      alert(isFinal ? "Project Finalized and saved locally!" : "Project Draft saved locally!");
+      return;
+    }
+
+    // Supabase Mode
+    try {
+      const dbPayload = { ...payload, user_id: user.id };
 
       let error;
-      if (currentDbId) {
+      if (currentDbId && !currentDbId.startsWith('local-')) {
         // Update existing
         const { error: updateError } = await supabase
           .from('estimates')
-          .update(payload)
+          .update(dbPayload)
           .eq('id', currentDbId);
         error = updateError;
       } else {
         // Insert new
         const { data: insertData, error: insertError } = await supabase
           .from('estimates')
-          .insert([payload])
-          .select()
+          .insert([dbPayload])
           .single();
         if (insertData) setCurrentDbId(insertData.id);
         error = insertError;
@@ -314,10 +385,12 @@ export default function App() {
 
       if (error) throw error;
 
-      alert("Project Finalized and saved to Database.");
+      setIsSaving(false);
+      alert(isFinal ? "Project Finalized and saved to Database!" : "Project Draft saved to Database!");
       fetchEstimates(user.id); // Refresh list
     } catch (err: any) {
       console.error('Error saving:', err);
+      setIsSaving(false);
       alert('Failed to save project: ' + err.message);
     }
   };
@@ -384,10 +457,6 @@ export default function App() {
         pdf.text(`Page ${pageNum}`, pdfWidth - margin, pdfHeight - margin, { align: 'right' });
       };
 
-      // Header Function (Page 1 only or all? Let's do all if desired, but user asked for "A header". 
-      // Often headers are only on p1 or simple headers on sub-pages. Let's stick to footer for consistent paging)
-      // We will rely on the HTML capture for the main Header visuals on Page 1.
-      
       // Page 1
       pdf.addImage(imgData, 'PNG', margin, position, contentWidth, imgHeight);
       addFooter(page);
@@ -399,12 +468,6 @@ export default function App() {
         position -= contentHeight; 
         pdf.addPage();
         page++;
-        
-        // Add image shifted up to show next chunk
-        // We use the same image data, just offset the Y position negatively
-        // Note: position is relative to the top of the PDF page. 
-        // For page 2, we want the image to start at: margin - contentHeight
-        // The variable 'position' tracks exactly this relative Y.
         
         pdf.addImage(imgData, 'PNG', margin, margin - ((page - 1) * contentHeight), contentWidth, imgHeight);
         
@@ -430,6 +493,101 @@ export default function App() {
     }
   };
 
+  const handleExportExcel = () => {
+    if (!result || !metadata || !inputs) return;
+
+    // 1. Summary Sheet
+    const summaryData = [
+      ["EstiMate Pro - Engineering Cost Report"],
+      [],
+      ["Project Information"],
+      ["Project ID", metadata.projectId],
+      ["Project Name", metadata.projectName],
+      ["Customer", metadata.customerName],
+      ["Date", metadata.createdDate],
+      ["Status", metadata.status],
+      ["Created By", metadata.createdBy],
+      [],
+      ["Cost Summary (per Unit)"],
+      ["Material Cost", result.materialCostPerPart],
+      ["Process Cost", result.processCostPerPart],
+      ["Packaging Cost", result.packagingCost],
+      ["SG&A Cost", result.sgaCost],
+      ["Profit Margin", result.profitCost],
+      ["Purchased Items", result.purchasedItemsCost],
+      ["Total Part Cost", result.totalPartCost],
+      [],
+      ["Commercial Totals"],
+      ["Annual Volume", inputs.annualVolume],
+      ["Total Annual Value", result.totalPartCost * (inputs.annualVolume || 0)],
+    ];
+
+    // 2. Technical Sheet
+    const techData = [
+      ["Technical Specifications"],
+      [],
+      ["Part Geometry"],
+      ["Length (mm)", inputs.length],
+      ["Width (mm)", inputs.width],
+      ["Height (mm)", inputs.height],
+      ["Wall Thickness (mm)", inputs.wallThickness],
+      ["Net Weight (g)", result.netWeight],
+      ["Projected Area (cm2)", result.projectedAreaCm2],
+      [],
+      ["Material Specs"],
+      ["Material Code", inputs.materialCode],
+      ["Material Name", MATERIALS.find(m => m.code === inputs.materialCode)?.name || ""],
+      ["Density (g/cm3)", MATERIALS.find(m => m.code === inputs.materialCode)?.density || ""],
+      ["Resin Price (INR/Kg)", inputs.resinPriceOverride],
+      [],
+      ["Manufacturing Selection"],
+      ["Selected Machine", result.selectedMachine?.tonnage + " Ton"],
+      ["Machine Rate (INR/hr)", result.selectedMachine?.mhr_inr],
+      ["Optimal Cavities", result.numCavities],
+      ["Cycle Time (sec)", result.cycleTime],
+      ["Yield (parts/hr)", result.actualPPH],
+      ["Clamp Req (Ton)", result.requiredTonnage],
+    ];
+
+    // 3. Breakdown Sheet
+    const breakdownData = [
+      ["Detailed Cost Breakdown"],
+      [],
+      ["Material Costs"],
+      ["Gross Resin Cost", result.resinCost],
+      ["Scrap Credit", -result.scrapCredit],
+      ["Net Material Cost", result.materialCostPerPart],
+      [],
+      ["Process Costs"],
+      ["Machine Amortization", result.machineCostPerPart],
+      ["Labor Component", result.laborCostPerPart],
+      ["Auxiliary Energy/Eq", result.auxCostPerPart],
+      ["Net Process Cost", result.processCostPerPart],
+      [],
+      ["Overheads"],
+      ["Packaging & Logistics", result.packagingCost],
+      ["SG&A (10%)", result.sgaRate],
+      ["Net Overheads", result.packagingCost + result.sgaCost],
+    ];
+
+    // 4. Analysis Sheet (Volume Sensitivity)
+    const analysisVolumes = [10000, 25000, 50000, 100000, 250000, 500000, 1000000];
+    const volumeAnalysisRows = [["Annual Volume", "Unit Cost (INR)", "Total Value (INR)"]];
+    analysisVolumes.forEach(v => {
+      const res = calculateCosts({ ...inputs, annualVolume: v });
+      volumeAnalysisRows.push([v, res.totalPartCost, res.totalPartCost * v]);
+    });
+
+    const wb = XLSX.utils.book_new();
+    
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryData), "Executive Summary");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(techData), "Technical Specs");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(breakdownData), "Cost Breakdown");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(volumeAnalysisRows), "Volume Sensitivity");
+
+    XLSX.writeFile(wb, `Estimation_Report_${metadata.projectId}.xlsx`);
+  };
+
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-brand-bgLight dark:bg-brand-bgDark">
@@ -439,29 +597,49 @@ export default function App() {
   }
 
   if (!user) {
-    return <Auth onLogin={() => {}} />;
+    return <Auth onLogin={handleGuestLogin} />;
   }
 
   const renderWorkspace = () => (
     <div id="pdf-capture-root" className="grid grid-cols-1 xl:grid-cols-12 gap-8 animate-slide-up">
-      {/* Reduced input width to 5 columns */}
+      {/* Input width to 5 columns */}
       <div className="xl:col-span-5 space-y-6 pb-32">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-sm">
            <div>
               <h1 className="text-xl font-black text-slate-800 dark:text-white tracking-tight">{metadata.projectName || 'Estimation Workspace'}</h1>
               <p className="text-xs text-slate-400 mt-1 font-medium">{metadata.projectId}</p>
            </div>
-           <button onClick={finalizeProject} className="p-2 bg-white dark:bg-slate-800 text-brand-primary dark:text-blue-400 rounded-xl border border-brand-primary/20 hover:bg-blue-50 transition-colors shadow-sm"><Lock className="w-4 h-4" /></button>
+           <div className="flex items-center gap-2">
+              <button 
+                onClick={() => handleSaveProject(false)} 
+                disabled={isSaving}
+                className="flex items-center px-4 py-2 bg-white dark:bg-slate-800 text-brand-primary dark:text-blue-400 rounded-xl border border-brand-primary/20 hover:bg-blue-50 dark:hover:bg-slate-700 transition-all shadow-sm font-bold text-xs"
+              >
+                {isSaving ? (
+                  <div className="w-4 h-4 border-2 border-brand-primary/30 border-t-brand-primary rounded-full animate-spin"></div>
+                ) : (
+                  <><Save className="w-4 h-4 mr-2" /> Save Project</>
+                )}
+              </button>
+              <button 
+                onClick={() => handleSaveProject(true)} 
+                className="p-2.5 bg-brand-primary text-white rounded-xl hover:bg-blue-900 transition-all shadow-lg shadow-blue-500/20"
+                title="Finalize Project"
+              >
+                <Lock className="w-4 h-4" />
+              </button>
+           </div>
         </div>
 
         {/* 1. Geometry Section */}
         <InputGroup title="1. Part Geometry & Tonnage">
-          <InputField label="Part Length" value={inputs.length ?? ''} onChange={(v) => updateInput('length', v)} type="number" suffix="mm" />
-          <InputField label="Part Width" value={inputs.width ?? ''} onChange={(v) => updateInput('width', v)} type="number" suffix="mm" />
-          <InputField label="Part Height" value={inputs.height ?? ''} onChange={(v) => updateInput('height', v)} type="number" suffix="mm" />
-          <InputField label="Wall Thickness" value={inputs.wallThickness ?? ''} onChange={(v) => updateInput('wallThickness', v)} type="number" suffix="mm" />
-          <InputField label="Shape Profile" value={inputs.shapeType} onChange={(v) => updateInput('shapeType', v)} type="select" options={Object.keys(ShapeType).map(k => ({ label: k, value: k }))} />
-          <InputField label="Part Weight" value={inputs.weight ?? ''} onChange={(v) => updateInput('weight', v)} type="number" suffix="g" />
+          {/* Use String() to ensure value passed is string and matches expectations of strict typing for input fields */}
+          <InputField label="Part Length" value={String(inputs.length ?? '')} onChange={(v) => updateInput('length', v)} type="number" suffix="mm" />
+          <InputField label="Part Width" value={String(inputs.width ?? '')} onChange={(v) => updateInput('width', v)} type="number" suffix="mm" />
+          <InputField label="Part Height" value={String(inputs.height ?? '')} onChange={(v) => updateInput('height', v)} type="number" suffix="mm" />
+          <InputField label="Wall Thickness" value={String(inputs.wallThickness ?? '')} onChange={(v) => updateInput('wallThickness', v)} type="number" suffix="mm" />
+          <InputField label="Shape Profile" value={String(inputs.shapeType)} onChange={(v) => updateInput('shapeType', v)} type="select" options={Object.keys(ShapeType).map(k => ({ label: k, value: k }))} />
+          <InputField label="Part Weight" value={String(inputs.weight ?? '')} onChange={(v) => updateInput('weight', v)} type="number" suffix="g" />
           
           {/* Intermediate Geometry Calculations */}
           {result && (
@@ -475,14 +653,15 @@ export default function App() {
 
         {/* 2. Production & Machine Metrics */}
         <InputGroup title="2. Production & Machine">
-          <InputField label="Material" value={inputs.materialCode} onChange={(v) => handleMaterialChange(v)} type="select" options={MATERIALS.map(m => ({ label: m.name, value: m.code }))} />
-          <InputField label="Annual Volume" value={inputs.annualVolume ?? ''} onChange={(v) => updateInput('annualVolume', v)} type="number" suffix="units" />
-          <InputField label="Runner System" value={inputs.runnerType} onChange={(v) => updateInput('runnerType', v)} type="select" options={[{ label: 'Hot', value: RunnerType.HOT }, { label: 'Cold 2-Plate', value: RunnerType.COLD_2_PLATE }, { label: 'Cold 3-Plate', value: RunnerType.COLD_3_PLATE }]} />
+          <InputField label="Material" value={String(inputs.materialCode)} onChange={(v) => handleMaterialChange(v)} type="select" options={MATERIALS.map(m => ({ label: m.name, value: m.code }))} />
+          <InputField label="Annual Volume" value={String(inputs.annualVolume ?? '')} onChange={(v) => updateInput('annualVolume', v)} type="number" suffix="units" />
+          <InputField label="Runner System" value={String(inputs.runnerType)} onChange={(v) => updateInput('runnerType', v)} type="select" options={[{ label: 'Hot', value: RunnerType.HOT }, { label: 'Cold 2-Plate', value: RunnerType.COLD_2_PLATE }, { label: 'Cold 3-Plate', value: RunnerType.COLD_3_PLATE }]} />
           
           {/* Intermediate Production Calculations */}
           {result && (
             <>
-              <InputField label="Cavities" value={result.numCavities} isCalculated />
+              {/* Stringify calculated numeric values to resolve "Type 'number' is not assignable to type 'string'" errors on line 577 */}
+              <InputField label="Cavities" value={String(result.numCavities)} isCalculated />
               <InputField label="Machine" value={result.selectedMachine?.tonnage ? `${result.selectedMachine.tonnage}T` : 'None'} isCalculated />
               <InputField label="Cycle Time" value={result.cycleTime.toFixed(1)} isCalculated suffix="sec" />
               <InputField label="Yield" value={result.actualPPH.toFixed(0)} isCalculated suffix="parts/hr" />
@@ -492,10 +671,10 @@ export default function App() {
 
         {/* 3. Cost & Commercial Derivation */}
         <InputGroup title="3. Commercial & Costs">
-          <InputField label="Resin Price" value={inputs.resinPriceOverride ?? ''} onChange={(v) => updateInput('resinPriceOverride', v)} type="number" suffix="₹/Kg" />
-          <InputField label="Packaging" value={inputs.packagingCostPerPart ?? ''} onChange={(v) => updateInput('packagingCostPerPart', v)} type="number" suffix="₹" />
-          <InputField label="SGA Rate" value={inputs.sgaRate ?? ''} onChange={(v) => updateInput('sgaRate', v)} type="number" step="0.01" />
-          <InputField label="Profit Margin" value={inputs.profitRate ?? ''} onChange={(v) => updateInput('profitRate', v)} type="number" step="0.01" />
+          <InputField label="Resin Price" value={String(inputs.resinPriceOverride ?? '')} onChange={(v) => updateInput('resinPriceOverride', v)} type="number" suffix="₹/Kg" />
+          <InputField label="Packaging" value={String(inputs.packagingCostPerPart ?? '')} onChange={(v) => updateInput('packagingCostPerPart', v)} type="number" suffix="₹" />
+          <InputField label="SGA Rate" value={String(inputs.sgaRate ?? '')} onChange={(v) => updateInput('sgaRate', v)} type="number" step="0.01" />
+          <InputField label="Profit Margin" value={String(inputs.profitRate ?? '')} onChange={(v) => updateInput('profitRate', v)} type="number" step="0.01" />
           
           {/* Intermediate Cost Calculations */}
           {result && (
@@ -539,7 +718,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* Increased results width to 7 columns */}
+      {/* Results width to 7 columns */}
       <div className="xl:col-span-7">
         <div className="sticky top-10">
            {result ? (
@@ -583,10 +762,18 @@ export default function App() {
              <span className="text-[10px] font-mono text-slate-400 bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded-md">EST-PRO_v2.1</span>
            </div>
            <div className="flex items-center gap-4">
+             {user.id === 'guest' && (
+                <div className="px-3 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-lg text-xs font-bold flex items-center">
+                   <ShieldAlert className="w-3 h-3 mr-1" /> Guest Mode
+                </div>
+             )}
              <div className="flex items-center gap-3 px-4 py-1.5 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700">
                 {user.picture ? <img src={user.picture} className="w-6 h-6 rounded-full" /> : <div className="w-6 h-6 rounded-full bg-brand-primary flex items-center justify-center text-[10px] text-white font-bold">{user.name[0]}</div>}
                 <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{user.name}</span>
-                <button onClick={handleLogout} className="text-[10px] font-black text-red-500 uppercase hover:underline">Logout</button>
+                <button onClick={handleLogout} className="text-[10px] font-black text-red-500 uppercase hover:underline flex items-center">
+                  <LogOut className="w-3 h-3 mr-1" />
+                  Logout
+                </button>
              </div>
              <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2.5 rounded-2xl text-slate-500 bg-slate-50 dark:bg-slate-800 hover:text-brand-primary transition-all">
                {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
@@ -722,7 +909,7 @@ export default function App() {
                  </div>
               </div>
            ) : view === 'reports' ? (
-             result && <ReportsSection metadata={metadata} inputs={inputs} result={result} onExportPDF={handleExportPDF} onExportExcel={() => {}} />
+             result && <ReportsSection metadata={metadata} inputs={inputs} result={result} onExportPDF={handleExportPDF} onExportExcel={handleExportExcel} />
            ) : null}
         </main>
       </div>

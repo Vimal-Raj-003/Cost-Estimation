@@ -54,13 +54,37 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
   }, [inputs]);
 
   // 2. Waterfall Data (Cumulative Build-up)
-  const waterfallData = [
-    { name: 'Material', val: result.materialCostPerPart },
-    { name: 'Process', val: result.processCostPerPart },
-    { name: 'Pack/OH', val: result.packagingCost + result.sgaCost },
-    { name: 'Items', val: result.purchasedItemsCost },
-    { name: 'Margin', val: result.profitCost },
-  ];
+  const waterfallData = useMemo(() => {
+    const components = [
+      { name: 'Material', val: result.materialCostPerPart, color: COLORS.material },
+      { name: 'Process', val: result.processCostPerPart, color: COLORS.process },
+      { name: 'Pack/OH', val: result.packagingCost + result.sgaCost, color: COLORS.overhead },
+      { name: 'Items', val: result.purchasedItemsCost, color: COLORS.purchased },
+      { name: 'Margin', val: result.profitCost, color: COLORS.profit },
+    ];
+
+    let cumulative = 0;
+    const items = components.map(c => {
+      const start = cumulative;
+      cumulative += c.val;
+      return {
+        ...c,
+        start,
+        displayVal: c.val
+      };
+    });
+
+    // Add final total bar
+    items.push({
+      name: 'Total',
+      val: result.totalPartCost,
+      start: 0,
+      displayVal: result.totalPartCost,
+      color: '#1F3A5F' // brand-primary
+    });
+
+    return items;
+  }, [result]);
 
   // 3. Distribution Data
   const distributionData = [
@@ -138,7 +162,6 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
         {[
           { label: 'Unit Cost', value: formatCurrency(result.totalPartCost), sub: 'Final Price', icon: DollarSign, color: 'text-brand-primary' },
           { label: 'Annual Total', value: formatCurrency(result.totalPartCost * inputs.annualVolume), sub: `for ${formatNumber(inputs.annualVolume, 0)} units`, icon: Package, color: 'text-purple-500' },
-          // Fixed: Use inputs.profitRate instead of result.profitRate as profitRate is part of UserInputs, not CalculationResult
           { label: 'Project Margin', value: `${(inputs.profitRate * 100).toFixed(1)}%`, sub: formatCurrency(result.profitCost), icon: TrendingUp, color: 'text-green-600' },
           { label: 'Cycle Time', value: `${result.cycleTime.toFixed(1)}s`, sub: `${result.actualPPH.toFixed(0)} PPH`, icon: Activity, color: 'text-teal-600' }
         ].map((kpi, idx) => (
@@ -212,25 +235,42 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
            </div>
         </div>
 
-        {/* Buildup Waterfall */}
+        {/* Buildup Waterfall Chart */}
         <div className="bg-white dark:bg-slate-900 p-10 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-sm lg:col-span-2">
            <h4 className="text-sm font-bold text-slate-800 dark:text-white mb-10 flex items-center">
              <div className="w-4 h-4 bg-teal-500 rounded-md mr-3 shadow-lg shadow-teal-500/20"></div>
-             Price Accretion Model (Incremental Build-up)
+             Price Accretion Waterfall Model
            </h4>
-           <div className="h-[300px] w-full">
+           <div className="h-[350px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                 <BarChart data={waterfallData}>
+                 <BarChart data={waterfallData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 'bold' }} />
                     <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                    <Bar dataKey="val" fill={COLORS.material} radius={[10, 10, 0, 0]} barSize={60} animationDuration={1500}>
+                    <RechartsTooltip 
+                      cursor={{ fill: 'transparent' }}
+                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                      formatter={(value: any, name: string) => name === 'displayVal' ? [formatCurrency(value), 'Cost'] : null}
+                      labelStyle={{ fontWeight: 'bold' }}
+                    />
+                    {/* Transparent bar for base stacking */}
+                    <Bar dataKey="start" stackId="stack" fill="transparent" />
+                    {/* Visible cost increments */}
+                    <Bar dataKey="displayVal" stackId="stack" radius={[6, 6, 0, 0]} barSize={60} animationDuration={1500}>
                        {waterfallData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={Object.values(COLORS)[index] || COLORS.material} />
+                          <Cell key={`cell-${index}`} fill={entry.color} />
                        ))}
                     </Bar>
                  </BarChart>
               </ResponsiveContainer>
+           </div>
+           <div className="mt-4 flex flex-wrap gap-4 justify-center">
+              {waterfallData.map((d, i) => (
+                <div key={i} className="flex items-center space-x-2">
+                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: d.color }}></div>
+                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{d.name}</span>
+                </div>
+              ))}
            </div>
         </div>
       </div>
@@ -246,7 +286,7 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
                   <TableRow label="Polymer Feedstock" value={inputs.materialCode} highlight />
                   <TableRow label="Net Part Weight" value={result.netWeight.toFixed(2)} unit="g" />
                   <TableRow label="Runner System (Paid)" value={result.runnerWeight.toFixed(2)} unit="g" />
-                  <TableRow label="Resin Market Price" value={formatNumber(inputs.resinPriceOverride)} unit="INR/Kg" />
+                  <TableRow label="Resin Market Price" value={formatNumber(inputs.resinPriceOverride || 0)} unit="INR/Kg" />
                   <TableRow label="Allowed Regrind" value={result.scrapCredit > 0 ? 'Applicable' : '0%'} />
                   <TableRow label="Total Shot Weight" value={result.shotWeight.toFixed(2)} unit="g" />
                </tbody>
