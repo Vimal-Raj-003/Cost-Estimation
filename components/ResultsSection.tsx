@@ -1,7 +1,8 @@
+
 import React, { useState } from 'react';
 import { CalculationResult } from '../types';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { AlertTriangle, ChevronDown, ChevronUp, Layers, Zap, Users, Box, TrendingUp, ShoppingBag, Info } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import { AlertTriangle, ChevronDown, ChevronUp, Layers, Zap, Users, Box, TrendingUp, ShoppingBag } from 'lucide-react';
 
 interface ResultsSectionProps {
   result: CalculationResult;
@@ -19,7 +20,7 @@ const formatNumber = (val: number, decimals = 2) => {
 const COLORS = {
   material: '#5DADE2', // Blue
   process: '#48C9B0',  // Teal
-  labor: '#F5B041',    // Amber (used inside process typically, but good for distinct)
+  labor: '#F5B041',    // Amber
   overhead: '#AF7AC5', // Purple
   purchased: '#E59866',// Orange
   profit: '#58D68D',   // Green
@@ -88,13 +89,13 @@ export const ResultsSection: React.FC<ResultsSectionProps> = ({ result }) => {
         {[
           { label: 'Total Unit Cost', value: formatCurrency(result.totalPartCost), sub: 'Incl. Margin', color: 'border-l-4 border-blue-600' },
           { label: 'Cycle Time', value: `${formatNumber(result.cycleTime, 1)}s`, sub: `${result.actualPPH.toFixed(0)} parts/hr`, color: 'border-l-4 border-teal-500' },
-          { label: 'Annual Cost', value: formatCurrency(result.totalPartCost * result.availableHours * result.requiredPPH), sub: 'Estimated', color: 'border-l-4 border-purple-500' }, // Approximation based on available inputs
+          { label: 'Annual Cost', value: formatCurrency(result.totalPartCost * result.availableHours * result.requiredPPH), sub: 'Estimated', color: 'border-l-4 border-purple-500' }, 
           { label: 'Margin', value: `${((result.profitCost / result.totalPartCost) * 100).toFixed(1)}%`, sub: formatCurrency(result.profitCost), color: 'border-l-4 border-green-500' },
         ].map((kpi, idx) => (
           <div key={idx} className={`bg-brand-cardLight dark:bg-brand-cardDark p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 ${kpi.color} hover:shadow-md transition-shadow cursor-default group`}>
              <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">{kpi.label}</p>
-             <p className="text-2xl font-bold text-slate-800 dark:text-white group-hover:scale-[1.02] transition-transform origin-left">{kpi.value}</p>
-             <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{kpi.sub}</p>
+             <p className="text-xl xl:text-2xl font-bold text-slate-800 dark:text-white group-hover:scale-[1.02] transition-transform origin-left truncate">{kpi.value}</p>
+             <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 truncate">{kpi.sub}</p>
           </div>
         ))}
       </div>
@@ -107,12 +108,11 @@ export const ResultsSection: React.FC<ResultsSectionProps> = ({ result }) => {
         </div>
       )}
 
-      {/* 2. Main Split Content */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+      {/* 2. Main Split Content - Changed layout for better visibility */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         
         {/* LEFT: Accordion Breakdown */}
-        <div className="xl:col-span-7 space-y-1">
-          
+        <div className="space-y-1">
           <div className="flex items-center justify-between mb-2 px-1">
             <h3 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Detailed Breakdown</h3>
           </div>
@@ -147,30 +147,27 @@ export const ResultsSection: React.FC<ResultsSectionProps> = ({ result }) => {
                <div className="text-xs text-slate-500 mt-2 italic">Detailed item list available in inputs.</div>
             </AccordionItem>
           )}
-
         </div>
 
-        {/* RIGHT: Infographics Panel */}
-        <div className="xl:col-span-5 space-y-6">
-           
+        {/* RIGHT: Infographics & Tech Panel */}
+        <div className="space-y-6">
            {/* Chart Card */}
-           <div className="bg-brand-cardLight dark:bg-brand-cardDark rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-              <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-6 flex items-center">
-                 Cost Distribution
-              </h4>
-              <div className="h-64 w-full">
+           <div className="bg-brand-cardLight dark:bg-brand-cardDark rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-6 flex flex-col h-[400px]">
+              <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-2">Cost Distribution</h4>
+              <div className="flex-1 w-full relative">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={chartData}
                       cx="50%"
                       cy="50%"
-                      innerRadius={60}
-                      outerRadius={80}
+                      innerRadius={80}
+                      outerRadius={110}
                       paddingAngle={4}
                       dataKey="value"
                       stroke="none"
-                      label={({ percent }) => `${(percent * 100).toFixed(1)}%`}
+                      // Improved label rendering to ensure values are visible
+                      label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
                       labelLine={{ stroke: '#94a3b8', strokeWidth: 1 }}
                     >
                       {chartData.map((entry, index) => (
@@ -178,7 +175,7 @@ export const ResultsSection: React.FC<ResultsSectionProps> = ({ result }) => {
                       ))}
                     </Pie>
                     <Tooltip 
-                      formatter={(val: number, name: string, props: any) => {
+                      formatter={(val: number, name: string) => {
                          const total = chartData.reduce((acc, cur) => acc + cur.value, 0);
                          const percent = ((val / total) * 100).toFixed(1);
                          return [`${formatCurrency(val)} (${percent}%)`, name];
@@ -190,7 +187,11 @@ export const ResultsSection: React.FC<ResultsSectionProps> = ({ result }) => {
                       verticalAlign="bottom" 
                       height={36} 
                       iconType="circle"
-                      formatter={(value) => <span className="text-slate-600 dark:text-slate-300 text-xs ml-1">{value}</span>}
+                      formatter={(value, entry: any) => (
+                         <span className="text-slate-600 dark:text-slate-300 text-xs ml-1 font-medium">
+                            {value}
+                         </span>
+                      )}
                     />
                   </PieChart>
                 </ResponsiveContainer>
@@ -202,30 +203,29 @@ export const ResultsSection: React.FC<ResultsSectionProps> = ({ result }) => {
               <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-4 flex items-center">
                  <Box className="w-4 h-4 mr-2 text-slate-400" /> Technical Summary
               </h4>
-              <div className="grid grid-cols-2 gap-y-4 gap-x-2 text-sm">
+              <div className="grid grid-cols-2 gap-y-4 gap-x-4 text-sm">
                  <div>
-                   <span className="block text-xs text-slate-400">Projected Area</span>
-                   <span className="font-medium text-slate-700 dark:text-slate-200">{formatNumber(result.projectedAreaCm2)} cm²</span>
+                   <span className="block text-xs text-slate-400 mb-1">Projected Area</span>
+                   <span className="font-medium text-slate-700 dark:text-slate-200 text-base">{formatNumber(result.projectedAreaCm2)} cm²</span>
                  </div>
                  <div>
-                   <span className="block text-xs text-slate-400">Required Clamp</span>
-                   <span className="font-medium text-slate-700 dark:text-slate-200">{formatNumber(result.requiredTonnage, 0)} T</span>
+                   <span className="block text-xs text-slate-400 mb-1">Required Clamp</span>
+                   <span className="font-medium text-slate-700 dark:text-slate-200 text-base">{formatNumber(result.requiredTonnage, 0)} T</span>
                  </div>
                  <div>
-                   <span className="block text-xs text-slate-400">Cooling Time</span>
-                   <span className="font-medium text-slate-700 dark:text-slate-200">{formatNumber(result.tCool, 1)} s</span>
+                   <span className="block text-xs text-slate-400 mb-1">Cooling Time</span>
+                   <span className="font-medium text-slate-700 dark:text-slate-200 text-base">{formatNumber(result.tCool, 1)} s</span>
                  </div>
                  <div>
-                   <span className="block text-xs text-slate-400">Fill Time</span>
-                   <span className="font-medium text-slate-700 dark:text-slate-200">{formatNumber(result.tFill, 1)} s</span>
+                   <span className="block text-xs text-slate-400 mb-1">Fill Time</span>
+                   <span className="font-medium text-slate-700 dark:text-slate-200 text-base">{formatNumber(result.tFill, 1)} s</span>
                  </div>
-                 <div className="col-span-2 pt-2 border-t border-slate-100 dark:border-slate-700 mt-1">
-                    <span className="block text-xs text-slate-400">Efficiency (OEE)</span>
-                    <span className="font-medium text-slate-700 dark:text-slate-200">{(result.availableHours > 0 ? (result.requiredPPH / result.actualPPH) * 100 : 0).toFixed(1)}% Capacity Utilization</span>
+                 <div className="col-span-2 pt-3 border-t border-slate-100 dark:border-slate-700 mt-1">
+                    <span className="block text-xs text-slate-400 mb-1">Efficiency (OEE)</span>
+                    <span className="font-medium text-slate-700 dark:text-slate-200">{(result.availableHours > 0 ? (result.requiredPPH / result.actualPPH) * 100 : 0).toFixed(1)}% Capacity</span>
                  </div>
               </div>
            </div>
-
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { HelpCircle, Calculator, User } from 'lucide-react';
+import { HelpCircle, Calculator, User, ChevronDown } from 'lucide-react';
 
 interface InputGroupProps {
   title: string;
@@ -8,14 +8,15 @@ interface InputGroupProps {
 }
 
 export const InputGroup: React.FC<InputGroupProps> = ({ title, children }) => (
-  <div className="bg-brand-cardLight dark:bg-brand-cardDark rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 mb-6 transition-all duration-300 hover:shadow-md">
-    <div className="flex items-center justify-between mb-6 border-b border-slate-50 dark:border-slate-800 pb-3">
+  <div className="bg-brand-cardLight dark:bg-brand-cardDark rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-5 mb-6 transition-all duration-300 hover:shadow-md">
+    <div className="flex items-center justify-between mb-5 border-b border-slate-50 dark:border-slate-800 pb-3">
       <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center">
         <div className="w-1.5 h-1.5 bg-brand-primary rounded-full mr-2"></div>
         {title}
       </h3>
     </div>
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    {/* Modified grid to 2 columns on larger screens instead of 3 to fit narrower space */}
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {children}
     </div>
   </div>
@@ -44,7 +45,7 @@ export const InputField: React.FC<InputFieldProps> = ({
   isCalculated = false,
   highlight = false
 }) => {
-  const baseClasses = "w-full border text-sm rounded-xl block p-3 transition-all outline-none appearance-none";
+  const baseClasses = "w-full border text-sm rounded-xl block p-2.5 transition-all outline-none appearance-none";
   
   // Input vs Calculated Color logic
   const stateClasses = isCalculated 
@@ -56,7 +57,7 @@ export const InputField: React.FC<InputFieldProps> = ({
   return (
     <div className="flex flex-col group animate-fade-in">
       <div className="flex justify-between items-center mb-1.5 px-1">
-        <label className={`text-[10px] font-bold uppercase tracking-widest ${isCalculated ? 'text-slate-400' : 'text-brand-primary dark:text-blue-400'}`}>
+        <label className={`text-[10px] font-bold uppercase tracking-widest truncate max-w-[70%] ${isCalculated ? 'text-slate-400' : 'text-brand-primary dark:text-blue-400'}`}>
           {label}
         </label>
         <div className={`flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-tighter ${isCalculated ? 'bg-slate-100 dark:bg-slate-800 text-slate-500' : 'bg-blue-100 dark:bg-blue-900/40 text-brand-primary dark:text-blue-300'}`}>
@@ -84,11 +85,11 @@ export const InputField: React.FC<InputFieldProps> = ({
               ))}
             </select>
             <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
-              <ChevronDownIcon />
+              <ChevronDown className="w-4 h-4" />
             </div>
           </div>
         ) : type === 'checkbox' ? (
-          <label className={`flex items-center p-3 border rounded-xl cursor-pointer transition-all ${stateClasses}`}>
+          <label className={`flex items-center p-2.5 border rounded-xl cursor-pointer transition-all ${stateClasses}`}>
             <input
                type="checkbox"
                checked={Boolean(value)}
@@ -109,7 +110,7 @@ export const InputField: React.FC<InputFieldProps> = ({
               onChange={(e) => onChange?.(e.target.value)}
             />
             {suffix && (
-              <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none">
+              <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                 <span className={`text-[10px] font-bold ${isCalculated ? 'text-slate-400' : 'text-brand-primary/60 dark:text-blue-400/60'}`}>
                   {suffix}
                 </span>
@@ -121,9 +122,3 @@ export const InputField: React.FC<InputFieldProps> = ({
     </div>
   );
 };
-
-const ChevronDownIcon = () => (
-  <svg className="h-4 w-4 fill-current" viewBox="0 0 20 20">
-    <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
-  </svg>
-);

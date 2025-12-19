@@ -1,10 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
-import { Mail, Lock, User, ArrowRight, ShieldCheck, Github, Chrome, Key, AlertCircle, CheckCircle } from 'lucide-react';
-import { User as UserType } from '../types';
+import React, { useState } from 'react';
+import { Mail, Lock, User, ArrowRight, ShieldCheck, Github, Chrome, AlertCircle, CheckCircle } from 'lucide-react';
+import { supabase } from '../lib/supabaseClient';
 
 interface AuthProps {
-  onLogin: (user: UserType) => void;
+  onLogin: (user: any) => void;
 }
 
 type AuthMode = 'signin' | 'signup' | 'reset';
@@ -17,53 +17,70 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
-  useEffect(() => {
-    // Initialize Google Identity Services
-    const handleGoogleResponse = (response: any) => {
-      setLoading(true);
-      // In a real app, you'd send 'response.credential' to your backend for verification
-      console.log("Encoded JWT ID token: " + response.credential);
-      
-      // Simulating a successful Google login
-      setTimeout(() => {
-        onLogin({
-          id: 'google-user-123',
-          email: 'user@example.com',
-          name: 'Google User',
-          role: 'user',
-          picture: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&h=100'
-        });
-      }, 1000);
-    };
-
-    if ((window as any).google) {
-      (window as any).google.accounts.id.initialize({
-        client_id: "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com", // Placeholder
-        callback: handleGoogleResponse
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+    try {
+      // 1. App calls Supabase
+      // 2. Supabase redirects to Google
+      // 3. Google redirects to: https://jsrqyisoilashfylvtbs.supabase.co/auth/v1/callback
+      // 4. Supabase redirects FINAL user to: window.location.origin (e.g., localhost:5173)
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin, 
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+        },
       });
-      (window as any).google.accounts.id.renderButton(
-        document.getElementById("googleSignInBtn"),
-        { theme: "outline", size: "large", width: "100%", shape: "pill" }
-      );
+      if (error) throw error;
+      // Page will redirect, so no need to stop loading state
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message });
+      setLoading(false);
     }
-  }, [onLogin]);
+  };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setMessage(null);
 
-    // Simulation of Auth Logic
-    setTimeout(() => {
-      setLoading(false);
-      if (mode === 'reset') {
+    try {
+      if (mode === 'signup') {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              full_name: name,
+            },
+          },
+        });
+        if (error) throw error;
+        setMessage({ type: 'success', text: 'Account created! Please check your email to confirm.' });
+        setLoading(false);
+      } else if (mode === 'signin') {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        if (error) throw error;
+        // onLogin is handled by the onAuthStateChange listener in App.tsx
+        // No need to set loading false here as component unmounts
+      } else if (mode === 'reset') {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin,
+        });
+        if (error) throw error;
         setMessage({ type: 'success', text: 'Password reset link sent to your email.' });
-      } else if (mode === 'signup') {
-        onLogin({ id: 'new-user-1', email, name: name || 'New User', role: 'user' });
-      } else {
-        onLogin({ id: 'user-1', email, name: 'Standard User', role: 'user' });
+        setLoading(false);
       }
-    }, 1500);
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message || 'An error occurred' });
+      setLoading(false);
+    }
   };
 
   return (
@@ -165,11 +182,12 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
               <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100 dark:border-slate-800"></div></div>
               <div className="relative flex justify-center text-[10px] font-black uppercase tracking-widest"><span className="bg-white dark:bg-slate-900 px-4 text-slate-400">Or continue with</span></div>
             </div>
-
-            <div id="googleSignInBtn" className="w-full"></div>
             
-            <button className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 py-3 rounded-full font-bold text-xs text-slate-600 dark:text-slate-300 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
-               <Github className="w-4 h-4 mr-2" /> GitHub
+            <button 
+              onClick={handleGoogleLogin}
+              className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 py-3 rounded-full font-bold text-xs text-slate-600 dark:text-slate-300 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+            >
+               <Chrome className="w-4 h-4 mr-2" /> Google
             </button>
           </div>
         )}
